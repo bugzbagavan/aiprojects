@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BugScribe</title>
+  <style>
+    :root {
+      --primary: #c92a2a;
+      --primary-soft: #fff5f5;
+      --secondary: #1864ab;
+      --secondary-soft: #f1f7fc;
+      --success: #2b8a3e;
+      --success-soft: #f4faf6;
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --border: #e9ecef;
+      --text: #212529;
+      --text-muted: #6c757d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      width: 280px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .header {
+      background: linear-gradient(135deg, #c92a2a 0%, #862e9c 100%);
+      color: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header svg { width: 22px; height: 22px; flex-shrink: 0; }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .header .subtitle {
+      font-size: 10px;
+      opacity: 0.85;
+      margin-top: 1px;
+    }
+    .body { padding: 14px 16px 16px; }
+    .timer {
+      font-family: ui-monospace, "SF Mono", Consolas, Menlo, monospace;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-align: center;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1.1;
+    }
+    .status {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      min-height: 32px;
+      margin-bottom: 12px;
+      word-break: break-word;
+      display: flex; align-items: center;
+    }
+    .recording-dot {
+      display: inline-block;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--primary);
+      margin-right: 6px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 50% { opacity: 0.3; } }
+    .btns { display: flex; flex-direction: column; gap: 6px; }
+    button {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px;
+      width: 100%; padding: 9px 12px;
+      font-size: 13px; font-weight: 500;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    button svg { width: 14px; height: 14px; flex-shrink: 0; }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+    button:active:not(:disabled) { transform: translateY(0); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #start { color: var(--primary);   border-color: var(--primary); }
+    #stop  { color: var(--secondary); border-color: var(--secondary); }
+    #save  { color: var(--success);   border-color: var(--success); }
+    #createBug {
+      color: #fff;
+      background: linear-gradient(135deg, #c92a2a 0%, #862e9c 100%);
+      border-color: transparent;
+    }
+    #createBug:hover:not(:disabled) { filter: brightness(1.05); }
+    #start:hover:not(:disabled) { background: var(--primary-soft); }
+    #stop:hover:not(:disabled)  { background: var(--secondary-soft); }
+    #save:hover:not(:disabled)  { background: var(--success-soft); }
+    button.hidden { display: none; }
+    .footer {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 0 16px 10px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="14" height="12" rx="2"/>
+      <path d="M22 8l-6 4 6 4V8z"/>
+    </svg>
+    <div>
+      <h1>BugScribe</h1>
+      <div class="subtitle">Tab + mic, saved as MP4</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="timer" id="timer">00:00</div>
+    <div class="status" id="status">Idle</div>
+    <div class="btns">
+      <button id="start" type="button">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="5"/></svg>
+        Start Recording
+      </button>
+      <button id="stop" type="button" disabled>
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg>
+        Stop Recording
+      </button>
+      <button id="save" type="button" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 2v8"/><path d="M4 7l4 4 4-4"/><path d="M2 14h12"/>
+        </svg>
+        Save
+      </button>
+      <button id="createBug" class="hidden" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="9" r="4"/>
+          <path d="M8 5V3"/><path d="M6 4l-1-1"/><path d="M10 4l1-1"/>
+          <path d="M2 9h2"/><path d="M12 9h2"/>
+          <path d="M3 12l2-1"/><path d="M13 12l-2-1"/>
+          <path d="M3 6l2 1"/><path d="M13 6l-2 1"/>
+        </svg>
+        Create Bug in Azure DevOps
+      </button>
+    </div>
+  </div>
+  <div class="footer">v1.0 &middot; click the floating dot on any page</div>
+  <script src="popup.js"></script>
+</body>
+</html>

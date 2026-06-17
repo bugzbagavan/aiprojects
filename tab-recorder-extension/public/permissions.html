@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>BugScribe — Permission Setup</title>
+  <style>
+    :root {
+      --primary: #c92a2a;
+      --secondary: #1864ab;
+      --success: #2b8a3e;
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --border: #e9ecef;
+      --text: #212529;
+      --text-muted: #6c757d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+      max-width: 460px;
+      width: 100%;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #c92a2a 0%, #862e9c 100%);
+      color: #fff;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header svg { width: 24px; height: 24px; }
+    .header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.4px; }
+    .body { padding: 22px; }
+    p { line-height: 1.55; font-size: 14px; color: var(--text); margin-bottom: 12px; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      font-size: 14px; font-weight: 500;
+      border: 1px solid var(--secondary);
+      color: var(--secondary);
+      background: var(--surface);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .button:hover:not(:disabled) {
+      background: #f1f7fc;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .button svg { width: 14px; height: 14px; }
+    #status {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      min-height: 18px;
+      display: none;
+    }
+    #status.shown { display: block; }
+    .ok  { background: #ebfbee; color: #2b8a3e; border: 1px solid #2b8a3e; }
+    .err { background: #fff5f5; color: #c92a2a; border: 1px solid #c92a2a; }
+    .info { background: #f1f7fc; color: #1864ab; border: 1px solid #1864ab; }
+    code {
+      background: var(--bg);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: ui-monospace, Consolas, monospace;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 16px;
+    }
+    /* Embedded-iframe mode — strips the chrome so the page fits inside
+       the in-page floater. The content script sizes the iframe; we
+       just need a compact layout. */
+    body.embed { padding: 0; background: transparent; min-height: 0; }
+    body.embed .card { border: 0; box-shadow: none; border-radius: 0; max-width: none; }
+    body.embed .header { display: none; }
+    body.embed .body { padding: 10px 12px; }
+    body.embed p { font-size: 12px; line-height: 1.4; margin-bottom: 8px; }
+    body.embed .hint { display: none; }
+    body.embed .button { padding: 7px 12px; font-size: 12px; }
+    body.embed #status { font-size: 11px; padding: 6px 8px; margin-top: 8px; }
+    body.embed .long-only { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8"  y1="23" x2="16" y2="23"/>
+      </svg>
+      <h1>BugScribe — Permission Setup</h1>
+    </div>
+    <div class="body">
+      <p class="long-only">
+        BugScribe needs access to your microphone so you can narrate while
+        recording the active tab. Browser popups can't reliably show the
+        permission prompt, so grant it once here.
+      </p>
+      <p>Click the button below, then choose <strong>Allow</strong> in the prompt.</p>
+      <button id="grant" class="button" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2a2 2 0 0 0-2 2v4a2 2 0 0 0 4 0V4a2 2 0 0 0-2-2z"/>
+          <path d="M12 7v1a4 4 0 0 1-8 0V7"/>
+          <line x1="8" y1="12" x2="8" y2="14"/>
+          <line x1="6" y1="14" x2="10" y2="14"/>
+        </svg>
+        Grant Microphone Access
+      </button>
+      <div id="status"></div>
+      <p class="hint">
+        Already granted? You can close this window. To revoke later, visit
+        <code>chrome://settings/content/microphone</code>.
+      </p>
+    </div>
+  </div>
+  <script src="permissions.js"></script>
+</body>
+</html>

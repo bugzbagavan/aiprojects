@@ -1,0 +1,21 @@
+{
+  "name": "bugscribe-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BugScribe — Chrome MV3 extension that records the active tab + microphone and saves an MP4 (H.264/AAC) for bug reports.",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "0.12.10",
+    "@ffmpeg/util": "0.12.1",
+    "@ffmpeg/core": "0.12.6"
+  },
+  "devDependencies": {
+    "copy-webpack-plugin": "^12.0.2",
+    "webpack": "^5.94.0",
+    "webpack-cli": "^5.1.4"
+  }
+}
