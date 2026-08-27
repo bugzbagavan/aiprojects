@@ -5,7 +5,7 @@ the audio, and saves the result as **MP4 (H.264 + AAC)** so it plays
 natively in Windows Media Player. All processing is client-side — no
 server required. On Chrome 126+ it records MP4 directly and skips
 transcoding entirely; on older Chrome it falls back to WebM and
-re-encodes via `ffmpeg.wasm`.
+re-encodes via `ffmpeg.wasm`. testing
 
 ## Features
 

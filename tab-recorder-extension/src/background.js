@@ -1,7 +1,7 @@
 // Service worker: coordinates popup <-> offscreen document, owns recording state.
 
 const OFFSCREEN_URL = 'offscreen.html';
-
+//testing changes in git
 async function hasOffscreen() {
   if (chrome.offscreen.hasDocument) return chrome.offscreen.hasDocument();
   // Fallback for older Chrome: list contexts.

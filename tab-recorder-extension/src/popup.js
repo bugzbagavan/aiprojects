@@ -25,6 +25,7 @@ async function safeStorageGet(area, keys) {
   } catch (err) {
     console.warn('[popup] storage.' + area + '.get failed:', err.message);
     return {};
+    console.log("something - updated");
   }
 }
 
