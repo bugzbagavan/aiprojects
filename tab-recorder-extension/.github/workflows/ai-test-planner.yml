@@ -1,0 +1,22 @@
+name: AI Test Planner
+
+on:
+  push:
+
+jobs:
+  test-planner:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Harness started
+        run: |
+          echo "================================"
+          echo "AI Test Planner Harness"
+          echo "================================"
+          echo "Push detected successfully!"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Repository: ${{ github.repository }}"
