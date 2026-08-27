@@ -10,13 +10,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Harness started
+      - name: Detect changes
         run: |
           echo "================================"
-          echo "AI Test Planner Harness"
+          echo "AI Test Planner - Change Detection"
           echo "================================"
-          echo "Push detected successfully!"
-          echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Repository: ${{ github.repository }}"
+
+          CURRENT_COMMIT="${{ github.sha }}"
+          PREVIOUS_COMMIT="${{ github.event.before }}"
+
+          echo "Previous commit: $PREVIOUS_COMMIT"
+          echo "Current commit:  $CURRENT_COMMIT"
+          echo ""
+
+          echo "Changed files:"
+          echo "--------------------------------"
+
+          git diff --name-status "$PREVIOUS_COMMIT" "$CURRENT_COMMIT"
+
+          echo "--------------------------------"
