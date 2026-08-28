@@ -14,6 +14,7 @@ jobs:
           fetch-depth: 0
 
       - name: Detect changes
+        shell: bash
         run: |
           echo "================================"
           echo "AI Test Planner - Change Detection"
@@ -29,16 +30,25 @@ jobs:
           echo "Changed files:"
           echo "--------------------------------"
 
-          git diff --name-status "$PREVIOUS_COMMIT" "$CURRENT_COMMIT"
+          if [ "$PREVIOUS_COMMIT" = "0000000000000000000000000000000000000000" ]; then
+            git ls-files --name-status
+          else
+            git diff --name-status "$PREVIOUS_COMMIT" "$CURRENT_COMMIT"
+          fi
 
           echo ""
           echo "================================"
           echo "Actual code diff"
           echo "================================"
 
-          git diff "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" > change-diff.txt
+          if [ "$PREVIOUS_COMMIT" = "0000000000000000000000000000000000000000" ]; then
+            git diff-tree --no-commit-id --name-status -r "$CURRENT_COMMIT"
+            git show --format=fuller --no-ext-diff "$CURRENT_COMMIT" > change-diff.txt
+          else
+            git diff "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" > change-diff.txt
+          fi
 
-          echo ""x`
+          echo ""
           echo "Diff saved to change-diff.txt"
           echo "Diff size:"
           wc -c change-diff.txt
@@ -50,6 +60,7 @@ jobs:
           path: change-diff.txt
 
       - name: Build AI planner input
+        shell: bash
         run: |
           echo "# AI Test Planner Input" > test-planner-input.md
           echo "" >> test-planner-input.md
@@ -64,7 +75,12 @@ jobs:
 
           echo "## Changed Files" >> test-planner-input.md
           echo "" >> test-planner-input.md
-          git diff --name-status "${{ github.event.before }}" "${{ github.sha }}" >> test-planner-input.md
+
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            git ls-files --name-status >> test-planner-input.md
+          else
+            git diff --name-status "${{ github.event.before }}" "${{ github.sha }}" >> test-planner-input.md
+          fi
 
           echo "" >> test-planner-input.md
           echo "---" >> test-planner-input.md
@@ -74,7 +90,7 @@ jobs:
           echo "" >> test-planner-input.md
           cat change-diff.txt >> test-planner-input.md
 
-          echo ""
+          echo "" 
           echo "AI planner input created:"
           wc -c test-planner-input.md
 
