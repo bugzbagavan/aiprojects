@@ -99,3 +99,38 @@ jobs:
         with:
           name: test-planner-input
           path: test-planner-input.md
+          
+      - name: Generate test plan with Mistral
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          echo "Calling Mistral AI..."
+
+          curl -sS https://api.mistral.ai/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $MISTRAL_API_KEY" \
+            -d '{
+              "model": "mistral-small-latest",
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "You are an expert software test planner. Analyze the provided project documentation and git changes. Produce a practical test plan with test scenarios, affected areas, regression tests, and edge cases."
+                },
+                {
+                  "role": "user",
+                  "content": "Analyze the following AI test planner input:\n\n'"$(cat test-planner-input.md)"'"
+                }
+              ],
+              "temperature": 0.2,
+              "max_tokens": 2000
+            }' > mistral-response.json
+
+          echo "Mistral response received."
+
+          cat mistral-response.json | jq -r '.choices[0].message.content' > test-plan.md
+
+          echo ""
+          echo "================================"
+          echo "Generated Test Plan"
+          echo "================================"
+          cat test-plan.md
