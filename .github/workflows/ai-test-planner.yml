@@ -156,3 +156,9 @@ jobs:
           echo ""
           echo "Test plan saved to test-plan.md"
           wc -c test-plan.md
+          
+      - name: Upload test plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-test-plan
+          path: test-plan.md          
