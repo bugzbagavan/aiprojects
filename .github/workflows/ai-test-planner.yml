@@ -49,7 +49,7 @@ jobs:
           name: change-diff
           path: change-diff.txt
 
-            - name: Build AI planner input
+      - name: Build AI planner input
         run: |
           echo "# AI Test Planner Input" > test-planner-input.md
           echo "" >> test-planner-input.md
@@ -64,8 +64,7 @@ jobs:
 
           echo "## Changed Files" >> test-planner-input.md
           echo "" >> test-planner-input.md
-          git diff --name-status \
-            "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" >> test-planner-input.md
+          git diff --name-status "${{ github.event.before }}" "${{ github.sha }}" >> test-planner-input.md
 
           echo "" >> test-planner-input.md
           echo "---" >> test-planner-input.md
@@ -78,3 +77,9 @@ jobs:
           echo ""
           echo "AI planner input created:"
           wc -c test-planner-input.md
+
+      - name: Upload planner input
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-planner-input
+          path: test-planner-input.md
