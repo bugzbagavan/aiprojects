@@ -38,7 +38,7 @@ jobs:
 
           git diff "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" > change-diff.txt
 
-          echo ""
+          echo ""x`
           echo "Diff saved to change-diff.txt"
           echo "Diff size:"
           wc -c change-diff.txt
@@ -48,3 +48,33 @@ jobs:
         with:
           name: change-diff
           path: change-diff.txt
+
+            - name: Build AI planner input
+        run: |
+          echo "# AI Test Planner Input" > test-planner-input.md
+          echo "" >> test-planner-input.md
+
+          echo "## Project Documentation" >> test-planner-input.md
+          echo "" >> test-planner-input.md
+          cat tab-recorder-extension/README.md >> test-planner-input.md
+
+          echo "" >> test-planner-input.md
+          echo "---" >> test-planner-input.md
+          echo "" >> test-planner-input.md
+
+          echo "## Changed Files" >> test-planner-input.md
+          echo "" >> test-planner-input.md
+          git diff --name-status \
+            "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" >> test-planner-input.md
+
+          echo "" >> test-planner-input.md
+          echo "---" >> test-planner-input.md
+          echo "" >> test-planner-input.md
+
+          echo "## Git Diff" >> test-planner-input.md
+          echo "" >> test-planner-input.md
+          cat change-diff.txt >> test-planner-input.md
+
+          echo ""
+          echo "AI planner input created:"
+          wc -c test-planner-input.md
