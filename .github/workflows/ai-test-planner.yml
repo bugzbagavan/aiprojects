@@ -36,8 +36,9 @@ jobs:
           echo "Actual code diff"
           echo "================================"
 
-          git diff "$PREVIOUS_COMMIT" "$CURRENT_COMMIT"
+          git diff "$PREVIOUS_COMMIT" "$CURRENT_COMMIT" > change-diff.txt
 
+          echo ""
           echo "Diff saved to change-diff.txt"
           echo "Diff size:"
           wc -c change-diff.txt
