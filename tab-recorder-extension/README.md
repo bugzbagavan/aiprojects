@@ -139,3 +139,6 @@ In `src/offscreen.js`:
 - The `ffmpeg.exec([...])` array is the full re-encode command — swap
   `ultrafast` for `veryfast`/`faster` for smaller files at the cost
   of CPU time, or change `-b:a` for audio bitrate.
+## AI Test Planner
+
+This project is monitored by the AI Test Planner workflow.
