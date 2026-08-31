@@ -575,7 +575,7 @@ jobs:
           find dist -maxdepth 2 -type f | sort
 
           echo ""
-          echo "Extension build verified successfully."       
+          echo "Extension build verified successfully." 
 
       - name: Generate Playwright tests
         shell: bash
@@ -583,57 +583,143 @@ jobs:
           echo "================================"
           echo "Generating Playwright tests"
           echo "================================"
-
-          mkdir -p tests/generated
-
+      
           python3 - <<'PY'
           import json
           import os
           import urllib.request
-
+      
           api_key = os.environ["MISTRAL_API_KEY"]
-
+      
           with open("automated-tests.json", "r", encoding="utf-8") as f:
-              spec = json.load(f)
-
-          prompt = """
-          You are an expert Playwright automation engineer.
-
-          You are implementing Playwright tests for an existing Chrome extension.
-
-          CRITICAL RULES:
-
-          1. Generate tests ONLY for the test IDs present in AUTOMATED TEST SPECIFICATION.
-          2. NEVER invent a test ID.
-          3. NEVER create additional tests.
-          4. NEVER create regression tests unless they are explicitly present in the specification.
-          5. NEVER create TC-xxx tests that are not present in the specification.
-          6. The number of generated Playwright tests MUST equal the number of tests
-             in AUTOMATED TEST SPECIFICATION.
-          7. Preserve every test ID exactly.
-          8. Every test must contain its original test ID in the test title.
-          9. Do not infer additional requirements from the project documentation.
-          10. Do not add tests based on what you believe should be tested.
-
-          APPROVED TEST IDS:
-
-          [INSERT IDS HERE]
-
-          If a test cannot reasonably be implemented, still generate the test using
-          test.skip() and preserve its exact ID. Do not invent a replacement test.
-
-          Return ONLY JavaScript.
-
-          AUTOMATION SPECIFICATION:
-          """ + json.dumps(spec, indent=2)
-
+              tests = json.load(f)
+      
+          prompt = r"""
+          You are an expert Playwright automation engineer specializing in
+          Chromium Manifest V3 browser extensions.
+      
+          Generate a REAL executable Playwright test file from the supplied
+          automated test specification.
+      
+          IMPORTANT:
+          - Return ONLY JavaScript source code.
+          - Do NOT use markdown fences.
+          - Do NOT explain anything.
+          - DO NOT use test.skip().
+          - DO NOT use test.fixme().
+          - DO NOT create placeholder tests.
+          - DO NOT write comments saying that something requires manual testing.
+          - Every supplied automation_candidate test MUST contain real executable
+            Playwright assertions.
+          - Every supplied test ID must appear in the generated tests.
+          - Do not invent test IDs.
+          - Do not silently omit tests.
+      
+          The Chrome extension has already been built into:
+      
+            dist/
+      
+          The tests will run in Chromium.
+      
+          Use Playwright's persistent browser context to load the extension.
+      
+          Use this pattern:
+      
+            const { chromium } = require('@playwright/test');
+            const path = require('path');
+      
+            const extensionPath = path.resolve('dist');
+      
+            const context = await chromium.launchPersistentContext('', {
+              headless: true,
+              args: [
+                `--disable-extensions-except=${extensionPath}`,
+                `--load-extension=${extensionPath}`
+              ]
+            });
+      
+          Obtain the extension ID from the service worker/background page when
+          possible.
+      
+          For example:
+      
+            let [serviceWorker] = context.serviceWorkers();
+      
+            if (!serviceWorker) {
+              serviceWorker = await context.waitForEvent('serviceworker');
+            }
+      
+            const extensionId = new URL(serviceWorker.url()).host;
+      
+          For extension popup tests, navigate directly to:
+      
+            chrome-extension://${extensionId}/popup.html
+      
+          For extension pages, use chrome-extension:// URLs rather than
+          chrome://extensions.
+      
+          IMPORTANT ABOUT CHROME EXTENSION TESTING:
+      
+          Do NOT attempt to automate chrome://extensions.
+      
+          Instead:
+          - Verify the extension loaded by detecting its service worker.
+          - Verify extension pages by navigating to chrome-extension://...
+          - Verify popup DOM and controls directly.
+          - Verify background/service-worker behavior where possible.
+          - Verify permissions through browser context configuration where
+            Playwright permits it.
+          - For unsupported browser-level behavior, test the observable behavior
+            that can actually be verified in Chromium.
+      
+          Test structure should look like:
+      
+            test.describe('BugScribe Chrome Extension Tests', () => {
+              test('TC-001 - Load extension in Chrome', async () => {
+                const context = await chromium.launchPersistentContext(...);
+      
+                try {
+                  const serviceWorker = ...;
+      
+                  expect(serviceWorker).toBeTruthy();
+                } finally {
+                  await context.close();
+                }
+              });
+            });
+      
+          IMPORTANT:
+          Do not use the normal `{ page }` fixture for extension startup tests
+          when the extension must be loaded through launchPersistentContext.
+      
+          For every test:
+          1. Launch Chromium with the extension loaded.
+          2. Create or obtain a page.
+          3. Perform the actual actions described by the test.
+          4. Assert the expected result.
+          5. Close the context.
+      
+          If a test concerns the popup, navigate to popup.html and interact with
+          actual DOM elements.
+      
+          If a selector cannot be known from the test specification, use robust
+          selectors such as:
+          - getByRole()
+          - getByText()
+          - getByLabel()
+          - locator()
+          
+          Do not replace a test with test.skip() merely because the exact selector
+          is uncertain.
+      
+          Generate complete runnable JavaScript.
+      
+          AUTOMATED TEST SPECIFICATION:
+          """ + json.dumps(tests, indent=2)
+      
           payload = json.dumps({
               "model": "mistral-small-latest",
               "messages": [
-                  {
-                      "role": "system",
-                      "content": "You generate reliable Playwright tests for Chrome extensions."
-                  },
                   {
                       "role": "user",
                       "content": prompt
@@ -641,7 +727,7 @@ jobs:
               ],
               "temperature": 0
           }).encode("utf-8")
-
+      
           request = urllib.request.Request(
               "https://api.mistral.ai/v1/chat/completions",
               data=payload,
@@ -651,32 +737,31 @@ jobs:
               },
               method="POST"
           )
-
+      
           with urllib.request.urlopen(request) as response:
               result = json.loads(response.read().decode("utf-8"))
-
+      
           content = result["choices"][0]["message"]["content"].strip()
-
+      
           if content.startswith("```"):
               lines = content.splitlines()
-              if lines[0].startswith("```"):
+              if lines and lines[0].startswith("```"):
                   lines = lines[1:]
               if lines and lines[-1].strip() == "```":
                   lines = lines[:-1]
               content = "\n".join(lines).strip()
-
+      
           with open("tests/generated/extension.spec.js", "w", encoding="utf-8") as f:
               f.write(content)
-
+      
           print("Playwright test generated.")
+          print("")
+          print("Generated test:")
+          print(content)
           PY
-
-          echo ""
-          echo "Generated test:"
-          sed -n '1,240p' tests/generated/extension.spec.js
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}                
+          
       - name: Validate generated Playwright tests
         shell: bash
         run: |
