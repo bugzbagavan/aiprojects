@@ -287,7 +287,7 @@ jobs:
           name: test-spec
           path: test-spec.json   
 
-            - name: Extract automation candidates
+      - name: Extract automation candidates
         shell: bash
         run: |
           echo "================================"
