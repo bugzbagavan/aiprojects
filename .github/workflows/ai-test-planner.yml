@@ -286,3 +286,46 @@ jobs:
         with:
           name: test-spec
           path: test-spec.json   
+
+            - name: Extract automation candidates
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Extracting automation candidates"
+          echo "================================"
+
+          TOTAL_TESTS=$(jq '.tests | length' test-spec.json)
+
+          jq '{
+            project: .project,
+            tests: [
+              .tests[]
+              | select(.automation_candidate == true)
+            ]
+          }' test-spec.json > automated-tests.json
+
+          AUTOMATED_TESTS=$(jq '.tests | length' automated-tests.json)
+          MANUAL_TESTS=$((TOTAL_TESTS - AUTOMATED_TESTS))
+
+          echo ""
+          echo "Total test cases:       $TOTAL_TESTS"
+          echo "Automation candidates:  $AUTOMATED_TESTS"
+          echo "Manual-only tests:      $MANUAL_TESTS"
+          echo ""
+
+          echo "Automation candidate IDs:"
+          jq -r '.tests[] | "\(.id) - \(.title)"' automated-tests.json
+
+          echo ""
+          echo "Automated test specification created:"
+          wc -c automated-tests.json
+
+          echo ""
+          echo "Preview:"
+          jq . automated-tests.json    
+
+      - name: Upload automation test specification
+        uses: actions/upload-artifact@v4
+        with:
+          name: automated-tests
+          path: automated-tests.json    
