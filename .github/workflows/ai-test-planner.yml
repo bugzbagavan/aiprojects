@@ -156,9 +156,133 @@ jobs:
           echo ""
           echo "Test plan saved to test-plan.md"
           wc -c test-plan.md
-          
+
       - name: Upload test plan
         uses: actions/upload-artifact@v4
         with:
           name: generated-test-plan
           path: test-plan.md          
+
+      - name: Build automated test specification
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Building automated test specification"
+          echo "================================"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          api_key = os.environ["MISTRAL_API_KEY"]
+
+          with open("test-plan.md", "r", encoding="utf-8") as f:
+              test_plan = f.read()
+
+          prompt = """
+          You are an expert QA automation engineer.
+
+          Convert the following AI-generated test plan into a machine-readable
+          JSON test specification.
+
+          Return ONLY valid JSON.
+          Do not use markdown fences.
+          Do not add explanations.
+
+          Required structure:
+
+          {
+            "project": "...",
+            "tests": [
+              {
+                "id": "TC-001",
+                "title": "...",
+                "priority": "P0",
+                "category": "functional",
+                "steps": [
+                  "..."
+                ],
+                "expected_result": "...",
+                "affected_files": [
+                  "..."
+                ],
+                "automation_candidate": true
+              }
+            ]
+          }
+
+          Rules:
+          - Preserve every test case from the test plan.
+          - Preserve the original test case IDs.
+          - Preserve the important steps and expected results.
+          - Use P0, P1, P2 or P3 for priority.
+          - Use functional, ui_ux, performance, compatibility or regression
+            for category.
+          - Set automation_candidate to true when the test can reasonably
+            be automated in a browser/Chrome extension test environment.
+          - Set automation_candidate to false when it requires manual
+            validation or cannot reasonably be automated.
+          - Do not invent test cases.
+
+          TEST PLAN:
+          """ + test_plan
+
+          payload = json.dumps({
+              "model": "mistral-small-latest",
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": prompt
+                  }
+              ],
+              "temperature": 0
+          }).encode("utf-8")
+
+          request = urllib.request.Request(
+              "https://api.mistral.ai/v1/chat/completions",
+              data=payload,
+              headers={
+                  "Authorization": f"Bearer {api_key}",
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          with urllib.request.urlopen(request) as response:
+              result = json.loads(response.read().decode("utf-8"))
+
+          content = result["choices"][0]["message"]["content"].strip()
+
+          # Remove accidental markdown fences if the model adds them.
+          if content.startswith("```"):
+              lines = content.splitlines()
+              lines = lines[1:]
+              if lines and lines[-1].strip() == "```":
+                  lines = lines[:-1]
+              content = "\n".join(lines).strip()
+
+          specification = json.loads(content)
+
+          with open("test-spec.json", "w", encoding="utf-8") as f:
+              json.dump(specification, f, indent=2)
+
+          print("Automated test specification created.")
+          print(f"Test cases: {len(specification.get('tests', []))}")
+          PY
+
+          echo ""
+          echo "Test specification size:"
+          wc -c test-spec.json
+
+          echo ""
+          echo "Test specification preview:"
+          head -80 test-spec.json
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Upload automated test specification
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-spec
+          path: test-spec.json   
