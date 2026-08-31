@@ -684,51 +684,95 @@ jobs:
           echo "Validating generated Playwright tests"
           echo "================================"
 
-          python3 - <<'PY'
-          import json
-          import re
-          import sys
+          TEST_FILE="tests/generated/extension.spec.js"
 
-          with open("automated-tests.json", "r", encoding="utf-8") as f:
-              spec = json.load(f)
+          if [ ! -f "$TEST_FILE" ]; then
+            echo "ERROR: Generated Playwright test file not found:"
+            echo "$TEST_FILE"
+            exit 1
+          fi
 
-          with open("tests/generated/extension.spec.js", "r", encoding="utf-8") as f:
-              generated = f.read()
+          echo ""
+          echo "Generated test file found:"
+          echo "$TEST_FILE"
 
-          allowed_ids = {
-              test["id"]
-              for test in spec["tests"]
-          }
+          echo ""
+          echo "Checking approved automation IDs..."
 
-          # Look for test-case IDs appearing in generated code.
-          found_ids = set(
-              re.findall(r'\b(?:R-)?TC-\d+\b', generated)
-          )
+          APPROVED_IDS=$(jq -r '
+            .tests[]
+            | select(.automation_candidate == true)
+            | .id
+          ' automated-tests.json)
 
-          print("Approved automation IDs:")
-          for test_id in sorted(allowed_ids):
-              print(f"  {test_id}")
+          if [ -z "$APPROVED_IDS" ]; then
+            echo "ERROR: No automation candidates found."
+            exit 1
+          fi
 
-          print("")
-          print("IDs found in generated Playwright:")
-          for test_id in sorted(found_ids):
-              print(f"  {test_id}")
+          echo ""
+          echo "Approved automation IDs:"
+          echo "$APPROVED_IDS"
 
-          unknown_ids = found_ids - allowed_ids
+          echo ""
+          echo "Checking IDs found in generated Playwright tests..."
 
-          print("")
+          GENERATED_IDS=$(grep -oE 'TC-[0-9]{3}' "$TEST_FILE" | sort -u)
 
-          if unknown_ids:
-              print("ERROR: Generated Playwright contains unauthorized test IDs:")
-              for test_id in sorted(unknown_ids):
-                  print(f"  {test_id}")
+          if [ -z "$GENERATED_IDS" ]; then
+            echo "ERROR: No test case IDs found in generated Playwright tests."
+            exit 1
+          fi
 
-              print("")
-              print("The AI generated tests that were not present in automated-tests.json.")
-              sys.exit(1)
+          echo ""
+          echo "IDs found in generated Playwright:"
+          echo "$GENERATED_IDS"
 
-          print("Generated Playwright test IDs are valid.")
-          PY    
+          echo ""
+          echo "Checking for missing automation tests..."
+
+          MISSING=0
+
+          while IFS= read -r ID; do
+            if ! echo "$GENERATED_IDS" | grep -qx "$ID"; then
+              echo "ERROR: Missing generated test for $ID"
+              MISSING=1
+            fi
+          done <<< "$APPROVED_IDS"
+
+          if [ "$MISSING" -ne 0 ]; then
+            echo ""
+            echo "ERROR: One or more automation candidates are missing."
+            exit 1
+          fi
+
+          echo ""
+          echo "Checking for unexpected test IDs..."
+
+          UNEXPECTED=0
+
+          while IFS= read -r ID; do
+            if ! echo "$APPROVED_IDS" | grep -qx "$ID"; then
+              echo "ERROR: Unexpected test ID generated: $ID"
+              UNEXPECTED=1
+            fi
+          done <<< "$GENERATED_IDS"
+
+          if [ "$UNEXPECTED" -ne 0 ]; then
+            echo ""
+            echo "ERROR: Generated Playwright contains tests that were not approved."
+            exit 1
+          fi
+
+          echo ""
+          echo "Checking Playwright syntax..."
+
+          node --check "$TEST_FILE"
+
+          echo ""
+          echo "================================"
+          echo "Generated Playwright tests VALID"
+          echo "================================"  
 
       - name: Run Playwright tests
         shell: bash
