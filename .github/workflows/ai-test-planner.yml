@@ -324,6 +324,12 @@ jobs:
           echo "Preview:"
           jq . automated-tests.json
 
+      - name: Upload automation test specification
+        uses: actions/upload-artifact@v4
+        with:
+          name: automated-tests
+          path: automated-tests.json    
+
       - name: Validate automation test specification
         shell: bash
         run: |
@@ -391,10 +397,32 @@ jobs:
           echo ""
           echo "================================"
           echo "Automation specification VALID"
-          echo "================================"        
+          echo "================================"  
 
-      - name: Upload automation test specification
-        uses: actions/upload-artifact@v4
-        with:
-          name: automated-tests
-          path: automated-tests.json    
+      - name: Set up Playwright
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Setting up Playwright"
+          echo "================================"
+
+          echo ""
+          echo "Node version:"
+          node --version
+
+          echo ""
+          echo "npm version:"
+          npm --version
+
+          echo ""
+          echo "Installing Playwright..."
+
+          npm install --no-save @playwright/test
+
+          echo ""
+          echo "Installing Chromium..."
+
+          npx playwright install chromium
+
+          echo ""
+          echo "Playwright setup completed successfully."              
