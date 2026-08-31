@@ -484,30 +484,30 @@ jobs:
           prompt = """
           You are an expert Playwright automation engineer.
 
-          Convert the supplied Chrome extension automation test specification
-          into executable Playwright JavaScript tests.
+          You are implementing Playwright tests for an existing Chrome extension.
 
-          Requirements:
+          CRITICAL RULES:
 
-          1. Use Playwright.
-          2. Use Chromium.
-          3. Load the Chrome extension from:
-             tab-recorder-extension/dist
-          4. Generate tests only for the supplied test cases.
-          5. Preserve every test case ID.
-          6. Use descriptive test names.
-          7. Use realistic Playwright locators.
-          8. Do not invent UI elements that are not supported by the test specification.
-          9. Tests must be runnable in GitHub Actions on Ubuntu.
-          10. Use extension background/service-worker handling where necessary.
-          11. Handle Chrome download/save behavior using Playwright APIs where possible.
-          12. Do not require a real microphone unless the test specifically requires it;
-              use Chromium permissions/fake media configuration where appropriate.
-          13. Do not test Chrome internal pages unless the test explicitly requires it.
-          14. Return ONLY valid JavaScript.
-          15. Do not use markdown fences.
+          1. Generate tests ONLY for the test IDs present in AUTOMATED TEST SPECIFICATION.
+          2. NEVER invent a test ID.
+          3. NEVER create additional tests.
+          4. NEVER create regression tests unless they are explicitly present in the specification.
+          5. NEVER create TC-xxx tests that are not present in the specification.
+          6. The number of generated Playwright tests MUST equal the number of tests
+             in AUTOMATED TEST SPECIFICATION.
+          7. Preserve every test ID exactly.
+          8. Every test must contain its original test ID in the test title.
+          9. Do not infer additional requirements from the project documentation.
+          10. Do not add tests based on what you believe should be tested.
 
-          The generated file must be a complete Playwright test file.
+          APPROVED TEST IDS:
+
+          [INSERT IDS HERE]
+
+          If a test cannot reasonably be implemented, still generate the test using
+          test.skip() and preserve its exact ID. Do not invent a replacement test.
+
+          Return ONLY JavaScript.
 
           AUTOMATION SPECIFICATION:
           """ + json.dumps(spec, indent=2)
@@ -562,6 +562,59 @@ jobs:
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
+      - name: Validate generated Playwright tests
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Validating generated Playwright tests"
+          echo "================================"
+
+          python3 - <<'PY'
+          import json
+          import re
+          import sys
+
+          with open("automated-tests.json", "r", encoding="utf-8") as f:
+              spec = json.load(f)
+
+          with open("tests/generated/extension.spec.js", "r", encoding="utf-8") as f:
+              generated = f.read()
+
+          allowed_ids = {
+              test["id"]
+              for test in spec["tests"]
+          }
+
+          # Look for test-case IDs appearing in generated code.
+          found_ids = set(
+              re.findall(r'\b(?:R-)?TC-\d+\b', generated)
+          )
+
+          print("Approved automation IDs:")
+          for test_id in sorted(allowed_ids):
+              print(f"  {test_id}")
+
+          print("")
+          print("IDs found in generated Playwright:")
+          for test_id in sorted(found_ids):
+              print(f"  {test_id}")
+
+          unknown_ids = found_ids - allowed_ids
+
+          print("")
+
+          if unknown_ids:
+              print("ERROR: Generated Playwright contains unauthorized test IDs:")
+              for test_id in sorted(unknown_ids):
+                  print(f"  {test_id}")
+
+              print("")
+              print("The AI generated tests that were not present in automated-tests.json.")
+              sys.exit(1)
+
+          print("Generated Playwright test IDs are valid.")
+          PY    
+
       - name: Run Playwright tests
         shell: bash
         run: |
@@ -572,14 +625,29 @@ jobs:
           mkdir -p playwright-report test-results
 
           npx playwright test tests/generated/extension.spec.js \
-            --reporter=html,list \
-            || TEST_EXIT_CODE=$?
+            --reporter=line,json,html \
+            --output=test-results \
+            > playwright-output.txt 2>&1 || TEST_EXIT_CODE=$?
+
+          cat playwright-output.txt
 
           echo ""
-          echo "Playwright execution completed."
+          echo "================================"
+          echo "Playwright Summary"
+          echo "================================"
+
+          if [ -f test-results.json ]; then
+            jq '{
+              expected: .stats.expected,
+              unexpected: .stats.unexpected,
+              skipped: .stats.skipped,
+              flaky: .stats.flaky
+            }' test-results.json || true
+          fi
 
           if [ -n "${TEST_EXIT_CODE:-}" ]; then
-            echo "Playwright tests failed with exit code $TEST_EXIT_CODE"
+            echo ""
+            echo "Playwright tests failed."
             exit "$TEST_EXIT_CODE"
           fi
 
