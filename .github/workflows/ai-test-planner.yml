@@ -322,7 +322,76 @@ jobs:
 
           echo ""
           echo "Preview:"
-          jq . automated-tests.json    
+          jq . automated-tests.json
+
+      - name: Validate automation test specification
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Validating automation specification"
+          echo "================================"
+
+          echo ""
+          echo "Checking JSON syntax..."
+
+          jq empty automated-tests.json
+
+          echo "JSON syntax: OK"
+
+          echo ""
+          echo "Checking test structure..."
+
+          jq -e '
+            .project
+            and (.tests | type == "array")
+          ' automated-tests.json > /dev/null
+
+          echo "Root structure: OK"
+
+          TOTAL=$(jq '.tests | length' automated-tests.json)
+
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "ERROR: No automation tests found."
+            exit 1
+          fi
+
+          echo "Automation tests found: $TOTAL"
+
+          echo ""
+          echo "Checking required fields..."
+
+          jq -e '
+            all(
+              .tests[];
+              (.id | type == "string")
+              and
+              (.title | type == "string")
+              and
+              (.priority | type == "string")
+              and
+              (.category | type == "string")
+              and
+              (.steps | type == "array")
+              and
+              (.expected_result | type == "string")
+              and
+              (.affected_files | type == "array")
+              and
+              (.automation_candidate == true)
+            )
+          ' automated-tests.json > /dev/null
+
+          echo "Required fields: OK"
+
+          echo ""
+          echo "Checking test IDs..."
+
+          jq -r '.tests[].id' automated-tests.json
+
+          echo ""
+          echo "================================"
+          echo "Automation specification VALID"
+          echo "================================"        
 
       - name: Upload automation test specification
         uses: actions/upload-artifact@v4
