@@ -173,6 +173,9 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import random
+          import time
+          import urllib.error
           import urllib.request
 
           api_key = os.environ["MISTRAL_API_KEY"]
@@ -200,13 +203,9 @@ jobs:
                 "title": "...",
                 "priority": "P0",
                 "category": "functional",
-                "steps": [
-                  "..."
-                ],
+                "steps": ["..."],
                 "expected_result": "...",
-                "affected_files": [
-                  "..."
-                ],
+                "affected_files": ["..."],
                 "automation_candidate": true
               }
             ]
@@ -232,6 +231,13 @@ jobs:
               "model": "mistral-small-latest",
               "messages": [
                   {
+                      "role": "system",
+                      "content": (
+                          "You are an expert QA automation engineer. "
+                          "Return strictly valid JSON."
+                      )
+                  },
+                  {
                       "role": "user",
                       "content": prompt
                   }
@@ -249,26 +255,104 @@ jobs:
               method="POST"
           )
 
-          with urllib.request.urlopen(request) as response:
-              result = json.loads(response.read().decode("utf-8"))
+          max_attempts = 5
+
+          for attempt in range(1, max_attempts + 1):
+              try:
+                  print(
+                      f"Mistral request attempt "
+                      f"{attempt}/{max_attempts}..."
+                  )
+
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=180
+                  ) as response:
+                      result = json.loads(
+                          response.read().decode("utf-8")
+                      )
+
+                  print("Mistral request succeeded.")
+                  break
+
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode("utf-8", errors="replace")
+
+                  print(f"Mistral HTTP error: {e.code}")
+                  print(f"Response: {body[:1000]}")
+
+                  # Retry transient server/rate-limit errors.
+                  if e.code not in (429, 500, 502, 503, 504):
+                      raise
+
+                  if attempt == max_attempts:
+                      print(
+                          "Mistral request failed after "
+                          f"{max_attempts} attempts."
+                      )
+                      raise
+
+                  delay = (2 ** (attempt - 1)) + random.uniform(0, 1)
+
+                  print(
+                      f"Transient Mistral error. "
+                      f"Retrying in {delay:.1f}s..."
+                  )
+
+                  time.sleep(delay)
+
+              except urllib.error.URLError as e:
+                  print(f"Network error: {e}")
+
+                  if attempt == max_attempts:
+                      raise
+
+                  delay = (2 ** (attempt - 1)) + random.uniform(0, 1)
+
+                  print(
+                      f"Network error. "
+                      f"Retrying in {delay:.1f}s..."
+                  )
+
+                  time.sleep(delay)
 
           content = result["choices"][0]["message"]["content"].strip()
 
-          # Remove accidental markdown fences if the model adds them.
           if content.startswith("```"):
               lines = content.splitlines()
-              lines = lines[1:]
+
+              if lines and lines[0].startswith("```"):
+                  lines = lines[1:]
+
               if lines and lines[-1].strip() == "```":
                   lines = lines[:-1]
+
               content = "\n".join(lines).strip()
 
-          specification = json.loads(content)
+          try:
+              specification = json.loads(content)
+          except json.JSONDecodeError as e:
+              print("ERROR: Mistral returned invalid JSON.")
+              print(content[:5000])
+              raise e
+
+          if not isinstance(specification, dict):
+              raise ValueError("Specification root must be an object.")
+
+          if "tests" not in specification:
+              raise ValueError("Specification missing 'tests'.")
+
+          if not isinstance(specification["tests"], list):
+              raise ValueError("'tests' must be an array.")
 
           with open("test-spec.json", "w", encoding="utf-8") as f:
               json.dump(specification, f, indent=2)
 
           print("Automated test specification created.")
-          print(f"Test cases: {len(specification.get('tests', []))}")
+          print(
+              f"Test cases: "
+              f"{len(specification.get('tests', []))}"
+          )
           PY
 
           echo ""
@@ -280,6 +364,37 @@ jobs:
           head -80 test-spec.json
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Validate generated test specification
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Validating generated test specification"
+          echo "================================"
+
+          jq empty test-spec.json
+
+          TEST_COUNT=$(jq '.tests | length' test-spec.json)
+
+          echo "Valid JSON"
+          echo "Test cases: $TEST_COUNT"
+
+          jq -e '
+            .project and
+            (.tests | type == "array") and
+            all(.tests[];
+              .id and
+              .title and
+              .priority and
+              .category and
+              (.steps | type == "array") and
+              .expected_result and
+              (.affected_files | type == "array") and
+              (.automation_candidate | type == "boolean")
+            )
+          ' test-spec.json > /dev/null
+
+          echo "Required schema: OK"    
 
       - name: Upload automated test specification
         uses: actions/upload-artifact@v4
