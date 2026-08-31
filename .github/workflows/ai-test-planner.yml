@@ -425,4 +425,39 @@ jobs:
           npx playwright install chromium
 
           echo ""
-          echo "Playwright setup completed successfully."              
+          echo "Playwright setup completed successfully."     
+
+      - name: Build Chrome extension
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Building Chrome extension"
+          echo "================================"
+
+          cd tab-recorder-extension
+
+          echo ""
+          echo "Installing extension dependencies..."
+          npm install
+
+          echo ""
+          echo "Building extension..."
+          npm run build
+
+          echo ""
+          echo "Build completed."
+
+          echo ""
+          echo "Checking dist directory..."
+
+          if [ ! -d "dist" ]; then
+            echo "ERROR: dist directory was not created."
+            exit 1
+          fi
+
+          echo ""
+          echo "dist contents:"
+          find dist -maxdepth 2 -type f | sort
+
+          echo ""
+          echo "Extension build verified successfully."             
