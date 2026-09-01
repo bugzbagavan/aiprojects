@@ -583,204 +583,233 @@ jobs:
           echo "================================"
           echo "Generating Playwright tests"
           echo "================================"
+
           mkdir -p tests/generated
+
           python3 - <<'PY'
           import json
           import os
           import urllib.request
-      
-          api_key = os.environ["MISTRAL_API_KEY"]
-      
-          with open("automated-tests.json", "r", encoding="utf-8") as f:
-              tests = json.load(f)
-      
-          prompt = r"""
+          import re
+
+          API_KEY = os.environ["MISTRAL_API_KEY"]
+
+          AUTOMATED_TESTS = "automated-tests.json"
+          OUTPUT_FILE = "tests/generated/extension.spec.js"
+
+          with open(AUTOMATED_TESTS, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          candidates = [
+              t for t in data["tests"]
+              if t.get("automation_candidate") is True
+          ]
+
+          if not candidates:
+              raise RuntimeError("No automation candidates found.")
+
+          print(f"Found {len(candidates)} automation candidates.")
+
+          def call_mistral(test_case):
+              test_id = test_case["id"]
+              title = test_case.get("title", test_id)
+
+              prompt = f"""
           You are an expert Playwright automation engineer testing a Chromium
           browser extension.
-          
-          Generate REAL executable Playwright tests.
-          
+
+          Generate ONE REAL executable Playwright test for the test case below.
+
+          TEST CASE ID:
+          {test_id}
+
+          TEST CASE TITLE:
+          {title}
+
+          TEST CASE SPECIFICATION:
+          {json.dumps(test_case, indent=2)}
+
           IMPORTANT RULES:
-          
-          1. Do NOT use test.skip().
-          2. Do NOT use test.fixme().
-          3. Do NOT generate placeholder tests.
-          4. Do NOT generate comments saying that manual setup is required.
-          5. Do NOT simply describe how a test could be automated.
-          6. Every generated test must contain executable Playwright actions
-             and at least one assertion.
-          7. The tests must load the actual Chrome extension from:
-          
-             tab-recorder-extension/dist
-          
-          8. The tests run in GitHub Actions using Chromium.
-          9. Do not navigate to chrome://extensions.
-          10. Do not require a human to click anything manually.
-          11. Use Playwright APIs wherever possible.
-          12. Use the actual extension files produced by the Build Chrome extension
-              step.
-          13. Preserve the original test case ID and title.
-          14. Generate one Playwright test for every automation candidate.
-          15. If a test requires browser permissions, configure the browser context
-              or use supported Chromium/Playwright APIs instead of skipping the test.
-          16. If a feature cannot be tested directly, test the observable behavior
-              that can be verified in the automated browser environment.
-          17. Every test must be runnable without manual intervention.
-          
-          The generated file must be valid CommonJS JavaScript.
-          
-          Use:
-          
-          const { test, expect } = require('@playwright/test');
-          
-          Do not use TypeScript.
-          
-          Return ONLY the JavaScript source code.
+
+          1. Generate exactly ONE Playwright test.
+          2. The test name MUST contain this exact ID:
+             {test_id}
+          3. Do NOT use test.skip().
+          4. Do NOT use test.fixme().
+          5. Do NOT create placeholder tests.
+          6. Do NOT create a test that only contains comments.
+          7. The test MUST perform real executable Playwright actions.
+          8. The test MUST contain at least one expect() assertion.
+          9. Do NOT require manual interaction.
+          10. Do NOT navigate to chrome://extensions.
+          11. The extension is already built.
+          12. The extension directory is:
+
+              tab-recorder-extension/dist
+
+          13. The test runs in GitHub Actions using Chromium.
+          14. Load the extension using Playwright's
+              chromium.launchPersistentContext().
+          15. Use the extension service worker to discover the extension ID.
+          16. For extension pages, use:
+
+              chrome-extension://${extensionId}/...
+
+          17. Do not invent a manual setup requirement.
+          18. If the exact selector is uncertain, use robust selectors.
+          19. If a browser-level behavior cannot be tested directly,
+              test the closest observable behavior available in Chromium.
+          20. Always produce executable code rather than skipping the test.
+
+          Use CommonJS JavaScript.
+
+          Required imports may include:
+
+              const {{ test, expect, chromium }} = require('@playwright/test');
+              const path = require('path');
+
+          Extension loading should follow this general pattern:
+
+              const extensionPath = path.resolve(
+                'tab-recorder-extension/dist'
+              );
+
+              const context = await chromium.launchPersistentContext('', {{
+                headless: true,
+                args: [
+                  `--disable-extensions-except=${{extensionPath}}`,
+                  `--load-extension=${{extensionPath}}`
+                ]
+              }});
+
+          Then obtain the service worker:
+
+              let serviceWorker = context.serviceWorkers()[0];
+
+              if (!serviceWorker) {{
+                serviceWorker = await context.waitForEvent('serviceworker');
+              }}
+
+              const extensionId = new URL(serviceWorker.url()).host;
+
+          If the test concerns popup.html, navigate to:
+
+              chrome-extension://${{extensionId}}/popup.html
+
+          Every test must close its browser context using try/finally.
+
+          Return ONLY the JavaScript test code.
           Do not use markdown fences.
-          
-          The Chrome extension has already been built into:
-      
-            dist/
-      
-          The tests will run in Chromium.
-      
-          Use Playwright's persistent browser context to load the extension.
-      
-          Use this pattern:
-      
-            const { chromium } = require('@playwright/test');
-            const path = require('path');
-      
-            const extensionPath = path.resolve('dist');
-      
-            const context = await chromium.launchPersistentContext('', {
-              headless: true,
-              args: [
-                `--disable-extensions-except=${extensionPath}`,
-                `--load-extension=${extensionPath}`
-              ]
-            });
-      
-          Obtain the extension ID from the service worker/background page when
-          possible.
-      
-          For example:
-      
-            let [serviceWorker] = context.serviceWorkers();
-      
-            if (!serviceWorker) {
-              serviceWorker = await context.waitForEvent('serviceworker');
-            }
-      
-            const extensionId = new URL(serviceWorker.url()).host;
-      
-          For extension popup tests, navigate directly to:
-      
-            chrome-extension://${extensionId}/popup.html
-      
-          For extension pages, use chrome-extension:// URLs rather than
-          chrome://extensions.
-      
-          IMPORTANT ABOUT CHROME EXTENSION TESTING:
-      
-          Do NOT attempt to automate chrome://extensions.
-      
-          Instead:
-          - Verify the extension loaded by detecting its service worker.
-          - Verify extension pages by navigating to chrome-extension://...
-          - Verify popup DOM and controls directly.
-          - Verify background/service-worker behavior where possible.
-          - Verify permissions through browser context configuration where
-            Playwright permits it.
-          - For unsupported browser-level behavior, test the observable behavior
-            that can actually be verified in Chromium.
-      
-          Test structure should look like:
-      
-            test.describe('BugScribe Chrome Extension Tests', () => {
-              test('TC-001 - Load extension in Chrome', async () => {
-                const context = await chromium.launchPersistentContext(...);
-      
-                try {
-                  const serviceWorker = ...;
-      
-                  expect(serviceWorker).toBeTruthy();
-                } finally {
-                  await context.close();
-                }
-              });
-            });
-      
-          IMPORTANT:
-          Do not use the normal `{ page }` fixture for extension startup tests
-          when the extension must be loaded through launchPersistentContext.
-      
-          For every test:
-          1. Launch Chromium with the extension loaded.
-          2. Create or obtain a page.
-          3. Perform the actual actions described by the test.
-          4. Assert the expected result.
-          5. Close the context.
-      
-          If a test concerns the popup, navigate to popup.html and interact with
-          actual DOM elements.
-      
-          If a selector cannot be known from the test specification, use robust
-          selectors such as:
-          - getByRole()
-          - getByText()
-          - getByLabel()
-          - locator()
-          
-          Do not replace a test with test.skip() merely because the exact selector
-          is uncertain.
-      
-          Generate complete runnable JavaScript.
-      
-          AUTOMATED TEST SPECIFICATION:
-          """ + json.dumps(tests, indent=2)
-      
-          payload = json.dumps({
-              "model": "mistral-small-latest",
-              "messages": [
-                  {
-                      "role": "user",
-                      "content": prompt
-                  }
-              ],
-              "temperature": 0
-          }).encode("utf-8")
-      
-          request = urllib.request.Request(
-              "https://api.mistral.ai/v1/chat/completions",
-              data=payload,
-              headers={
-                  "Authorization": f"Bearer {api_key}",
-                  "Content-Type": "application/json"
-              },
-              method="POST"
+          """
+
+              payload = json.dumps({
+                  "model": "mistral-small-latest",
+                  "messages": [
+                      {
+                          "role": "user",
+                          "content": prompt
+                      }
+                  ],
+                  "temperature": 0
+              }).encode("utf-8")
+
+              request = urllib.request.Request(
+                  "https://api.mistral.ai/v1/chat/completions",
+                  data=payload,
+                  headers={
+                      "Authorization": f"Bearer {API_KEY}",
+                      "Content-Type": "application/json"
+                  },
+                  method="POST"
+              )
+
+              with urllib.request.urlopen(request) as response:
+                  result = json.loads(
+                      response.read().decode("utf-8")
+                  )
+
+              content = result["choices"][0]["message"]["content"].strip()
+
+              if content.startswith("```"):
+                  lines = content.splitlines()
+
+                  if lines and lines[0].startswith("```"):
+                      lines = lines[1:]
+
+                  if lines and lines[-1].strip() == "```":
+                      lines = lines[:-1]
+
+                  content = "\n".join(lines).strip()
+
+              if not re.search(
+                  rf"\b{re.escape(test_id)}\b",
+                  content
+              ):
+                  raise RuntimeError(
+                      f"Mistral response does not contain required ID {test_id}"
+                  )
+
+              if "test.skip(" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} contains test.skip()"
+                  )
+
+              if "test.fixme(" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} contains test.fixme()"
+                  )
+
+              if "expect(" not in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} contains no expect() assertion"
+                  )
+
+              return content
+
+          generated_tests = []
+
+          for index, test_case in enumerate(candidates, start=1):
+              test_id = test_case["id"]
+
+              print("")
+              print("--------------------------------")
+              print(f"Generating {index}/{len(candidates)}: {test_id}")
+              print("--------------------------------")
+
+              test_code = call_mistral(test_case)
+
+              generated_tests.append(test_code)
+
+              print(f"Generated {test_id}")
+
+          header = """const { test, expect, chromium } = require('@playwright/test');
+          const path = require('path');
+
+          test.describe('BugScribe Chrome Extension Tests', () => {
+          """
+
+          footer = """
+          });
+          """
+
+          body = "\n\n".join(
+              "  " + line if line.strip() else ""
+              for test in generated_tests
+              for line in test.splitlines()
           )
-      
-          with urllib.request.urlopen(request) as response:
-              result = json.loads(response.read().decode("utf-8"))
-      
-          content = result["choices"][0]["message"]["content"].strip()
-      
-          if content.startswith("```"):
-              lines = content.splitlines()
-              if lines and lines[0].startswith("```"):
-                  lines = lines[1:]
-              if lines and lines[-1].strip() == "```":
-                  lines = lines[:-1]
-              content = "\n".join(lines).strip()
-      
-          with open("tests/generated/extension.spec.js", "w", encoding="utf-8") as f:
+
+          content = header + "\n" + body + "\n" + footer
+
+          with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
               f.write(content)
-      
-          print("Playwright test generated.")
+
           print("")
-          print("Generated test:")
-          print(content)
+          print("================================")
+          print("Playwright tests generated.")
+          print("================================")
+          print("")
+          print(f"Generated {len(generated_tests)} tests.")
+          print(f"Output: {OUTPUT_FILE}")
           PY
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -812,7 +841,7 @@ jobs:
             .tests[]
             | select(.automation_candidate == true)
             | .id
-          ' automated-tests.json)
+          ' automated-tests.json | sort -u)
 
           if [ -z "$APPROVED_IDS" ]; then
             echo "ERROR: No automation candidates found."
@@ -826,7 +855,14 @@ jobs:
           echo ""
           echo "Checking IDs found in generated Playwright tests..."
 
-          GENERATED_IDS=$(grep -oE 'TC-[0-9]{3}' "$TEST_FILE" | sort -u)
+          # Supports both:
+          # TC-001
+          # TC-025
+          # R-TC-001
+          # R-TC-002
+          # R-TC-003
+
+          GENERATED_IDS=$(grep -oE 'TC-[A-Za-z0-9]{3,4}' "$TEST_FILE" | sort -u)
 
           if [ -z "$GENERATED_IDS" ]; then
             echo "ERROR: No test case IDs found in generated Playwright tests."
@@ -843,7 +879,7 @@ jobs:
           MISSING=0
 
           while IFS= read -r ID; do
-            if ! echo "$GENERATED_IDS" | grep -qx "$ID"; then
+            if ! echo "$GENERATED_IDS" | grep -Fxq "$ID"; then
               echo "ERROR: Missing generated test for $ID"
               MISSING=1
             fi
@@ -861,7 +897,7 @@ jobs:
           UNEXPECTED=0
 
           while IFS= read -r ID; do
-            if ! echo "$APPROVED_IDS" | grep -qx "$ID"; then
+            if ! echo "$APPROVED_IDS" | grep -Fxq "$ID"; then
               echo "ERROR: Unexpected test ID generated: $ID"
               UNEXPECTED=1
             fi
@@ -874,6 +910,17 @@ jobs:
           fi
 
           echo ""
+          echo "Checking for skipped tests..."
+          
+          if grep -nE 'test\.(skip|fixme)\s*\(' "$TEST_FILE"; then
+            echo ""
+            echo "ERROR: Generated Playwright tests contain skipped/fixme tests."
+            exit 1
+          fi
+          
+          echo "No skipped or fixme tests found."
+
+          echo ""
           echo "Checking Playwright syntax..."
 
           node --check "$TEST_FILE"
@@ -881,7 +928,7 @@ jobs:
           echo ""
           echo "================================"
           echo "Generated Playwright tests VALID"
-          echo "================================"  
+          echo "================================"
 
       - name: Run Playwright tests
         shell: bash
