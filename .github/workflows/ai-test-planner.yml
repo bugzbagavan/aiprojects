@@ -610,6 +610,18 @@ jobs:
 
           print(f"Found {len(candidates)} automation candidates.")
 
+          # Proof of concept:
+          # Generate only the first automation candidate.
+          candidates = [
+              t for t in candidates
+              if t.get("id") == "TC-001"
+          ]
+          
+          if not candidates:
+              raise RuntimeError("TC-001 is not an automation candidate.")
+          
+          print("Proof of concept: generating only TC-001.")
+
           def call_mistral(test_case):
               test_id = test_case["id"]
               title = test_case.get("title", test_id)
