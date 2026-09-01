@@ -614,7 +614,7 @@ jobs:
               test_id = test_case["id"]
               title = test_case.get("title", test_id)
 
-          prompt = f"""
+              prompt = f"""
           You are an expert Playwright automation engineer testing a Chromium
           browser extension.
 
@@ -794,8 +794,8 @@ jobs:
 
           body = "\n\n".join(
               "  " + line if line.strip() else ""
-              for test in generated_tests
-              for line in test.splitlines()
+              for test_code in generated_tests
+              for line in test_code.splitlines()
           )
 
           content = header + "\n" + body + "\n" + footer
@@ -811,6 +811,7 @@ jobs:
           print(f"Generated {len(generated_tests)} tests.")
           print(f"Output: {OUTPUT_FILE}")
           PY
+
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
                 
