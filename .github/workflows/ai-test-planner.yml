@@ -583,7 +583,7 @@ jobs:
           echo "================================"
           echo "Generating Playwright tests"
           echo "================================"
-      
+          mkdir -p tests/generated
           python3 - <<'PY'
           import json
           import os
@@ -595,26 +595,49 @@ jobs:
               tests = json.load(f)
       
           prompt = r"""
-          You are an expert Playwright automation engineer specializing in
-          Chromium Manifest V3 browser extensions.
-      
-          Generate a REAL executable Playwright test file from the supplied
-          automated test specification.
-      
-          IMPORTANT:
-          - Return ONLY JavaScript source code.
-          - Do NOT use markdown fences.
-          - Do NOT explain anything.
-          - DO NOT use test.skip().
-          - DO NOT use test.fixme().
-          - DO NOT create placeholder tests.
-          - DO NOT write comments saying that something requires manual testing.
-          - Every supplied automation_candidate test MUST contain real executable
-            Playwright assertions.
-          - Every supplied test ID must appear in the generated tests.
-          - Do not invent test IDs.
-          - Do not silently omit tests.
-      
+          You are an expert Playwright automation engineer testing a Chromium
+          browser extension.
+          
+          Generate REAL executable Playwright tests.
+          
+          IMPORTANT RULES:
+          
+          1. Do NOT use test.skip().
+          2. Do NOT use test.fixme().
+          3. Do NOT generate placeholder tests.
+          4. Do NOT generate comments saying that manual setup is required.
+          5. Do NOT simply describe how a test could be automated.
+          6. Every generated test must contain executable Playwright actions
+             and at least one assertion.
+          7. The tests must load the actual Chrome extension from:
+          
+             tab-recorder-extension/dist
+          
+          8. The tests run in GitHub Actions using Chromium.
+          9. Do not navigate to chrome://extensions.
+          10. Do not require a human to click anything manually.
+          11. Use Playwright APIs wherever possible.
+          12. Use the actual extension files produced by the Build Chrome extension
+              step.
+          13. Preserve the original test case ID and title.
+          14. Generate one Playwright test for every automation candidate.
+          15. If a test requires browser permissions, configure the browser context
+              or use supported Chromium/Playwright APIs instead of skipping the test.
+          16. If a feature cannot be tested directly, test the observable behavior
+              that can be verified in the automated browser environment.
+          17. Every test must be runnable without manual intervention.
+          
+          The generated file must be valid CommonJS JavaScript.
+          
+          Use:
+          
+          const { test, expect } = require('@playwright/test');
+          
+          Do not use TypeScript.
+          
+          Return ONLY the JavaScript source code.
+          Do not use markdown fences.
+          
           The Chrome extension has already been built into:
       
             dist/
@@ -760,7 +783,8 @@ jobs:
           print(content)
           PY
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}                
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+                
           
       - name: Validate generated Playwright tests
         shell: bash
