@@ -611,15 +611,15 @@ jobs:
           print(f"Found {len(candidates)} automation candidates.")
 
           # Proof of concept:
-          # Generate only the first automation candidate.
+          # Generate only TC-001.
           candidates = [
               t for t in candidates
               if t.get("id") == "TC-001"
           ]
-          
+
           if not candidates:
               raise RuntimeError("TC-001 is not an automation candidate.")
-          
+
           print("Proof of concept: generating only TC-001.")
 
           def call_mistral(test_case):
@@ -655,95 +655,77 @@ jobs:
           9. Do NOT require manual interaction.
           10. Do NOT navigate to chrome://extensions.
           11. The extension is already built.
-          12. The extension directory is:
+          12. The extension is located at:
 
               tab-recorder-extension/dist
 
           13. The test runs in GitHub Actions using Chromium.
-          14. Load the extension using Playwright's
-              chromium.launchPersistentContext().
-          15. Use the extension service worker to discover the extension ID.
-          16. For extension pages, use:
+          14. DO NOT launch Chromium yourself.
+          15. DO NOT use chromium.launch().
+          16. DO NOT use chromium.launchPersistentContext().
+          17. DO NOT use headless: false.
+          18. DO NOT use --headed.
+          19. Use the existing project extension fixture.
+          20. Import the fixture using:
 
-              'chrome-extension://' + extensionId + '/...'
+              const {{ launchExtension }} = require('../fixtures/extension');
 
-          17. Do not invent a manual setup requirement.
-          18. If the exact selector is uncertain, use robust selectors.
-          19. If a browser-level behavior cannot be tested directly,
-              test the closest observable behavior available in Chromium.
-          20. Always produce executable code rather than skipping the test.
+          21. Obtain the browser context using:
 
-          Use CommonJS JavaScript.
+              const context = await launchExtension();
 
-          Required imports may include:
+          22. The fixture is responsible for:
+              - launching Chromium
+              - running Chromium headlessly
+              - loading the Chrome extension
+              - configuring the extension path
 
-              const {{ test, expect, chromium }} = require('@playwright/test');
-              const path = require('path');
+          23. Do not replace or reimplement launchExtension().
+          24. Use the extension service worker to verify that the extension
+              successfully loaded.
+          25. The generated test must contain at least one meaningful assertion.
+          26. Always close the context using try/finally.
+          27. Always produce executable code rather than skipping the test.
 
-          Extension loading should follow this general pattern:
-          IMPORTANT GITHUB ACTIONS REQUIREMENT:
+          The generated test should use CommonJS JavaScript.
 
-          The test runs on a Linux GitHub Actions runner without an X server.
-          
-          The generated test MUST run in headless Chromium.
-          
-          You MUST use:
-          
-              headless: true
-          
-          You MUST NOT use:
-          
-              headless: false
-          
-          You MUST NOT use:
-          
-              --headed
-          
-          You MUST NOT require X11, DISPLAY, or xvfb.
-          
-          Do not override the headless setting anywhere else in the generated test.
+          Required imports:
 
-              const extensionPath = path.resolve(
-                'tab-recorder-extension/dist'
-              );
-          IMPORTANT CI HEADLESS REQUIREMENT:
+              const {{ test, expect }} = require('@playwright/test');
+              const {{ launchExtension }} = require('../fixtures/extension');
 
-          The tests run on a GitHub Actions Linux runner without an X server.
-          
-          Therefore:
-          
-          - The browser MUST run in headless mode.
-          - ALWAYS use `headless: true`.
-          - NEVER use `headless: false`.
-          - NEVER use `--headed`.
-          - NEVER require X11, DISPLAY, or xvfb.
-          - Do not override headless mode anywhere in the generated test.
-          
-          The generated code MUST use exactly this browser configuration pattern:    
+          Use this structure:
 
-              const context = await chromium.launchPersistentContext('', {{
-                headless: true,
-                args: [
-                  '--disable-extensions-except=' + extensionPath,
-                  '--load-extension=' + extensionPath
-                ]
+              test('TC-001 - ...', async () => {{
+                const context = await launchExtension();
+
+                try {{
+                  const serviceWorkers = context.serviceWorkers();
+
+                  if (serviceWorkers.length === 0) {{
+                    await context.waitForEvent('serviceworker');
+                  }}
+
+                  const serviceWorker = context.serviceWorkers()[0];
+
+                  expect(serviceWorker).toBeTruthy();
+                }} finally {{
+                  await context.close();
+                }}
               }});
 
-          Then obtain the service worker:
+          If the service worker is not immediately available, wait for the
+          serviceworker event before making the assertion.
 
-              let serviceWorker = context.serviceWorkers()[0];
+          Do not use browser startup code in the generated test.
 
-              if (!serviceWorker) {{
-                serviceWorker = await context.waitForEvent('serviceworker');
-              }}
+          Do not import chromium.
 
-              const extensionId = new URL(serviceWorker.url()).host;
+          Do not import path.
 
-          If the test concerns popup.html, navigate to:
+          Do not create your own extensionPath variable.
 
-              'chrome-extension://' + extensionId + '/popup.html'
-
-          Every test must close its browser context using try/finally.
+          Do not create your own launchPersistentContext() call.
 
           Return ONLY the JavaScript test code.
           Do not use markdown fences.
@@ -805,26 +787,30 @@ jobs:
                   raise RuntimeError(
                       f"Generated test {test_id} contains test.fixme()"
                   )
-          echo ""
-          echo "Checking browser headless configuration..."
-          
-          if grep -qE 'headless[[:space:]]*:[[:space:]]*false' "$TEST_FILE"; then
-            echo "ERROR: Generated Playwright test uses headless: false."
-            echo "GitHub Actions requires headless Chromium."
-            exit 1
-          fi
-          
-          if grep -q -- "--headed" "$TEST_FILE"; then
-            echo "ERROR: Generated Playwright test contains --headed."
-            echo "GitHub Actions requires headless Chromium."
-            exit 1
-          fi
-          
-          echo "Headless browser configuration VALID."
 
               if "expect(" not in content:
                   raise RuntimeError(
                       f"Generated test {test_id} contains no expect() assertion"
+                  )
+
+              if "chromium.launch(" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} launches Chromium directly"
+                  )
+
+              if "chromium.launchPersistentContext(" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} launches a persistent context directly"
+                  )
+
+              if "headless: false" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} contains headless: false"
+                  )
+
+              if "--headed" in content:
+                  raise RuntimeError(
+                      f"Generated test {test_id} contains --headed"
                   )
 
               return content
@@ -845,8 +831,8 @@ jobs:
 
               print(f"Generated {test_id}")
 
-          header = """const { test, expect, chromium } = require('@playwright/test');
-          const path = require('path');
+          header = """const { test, expect } = require('@playwright/test');
+          const { launchExtension } = require('../fixtures/extension');
 
           test.describe('BugScribe Chrome Extension Tests', () => {
           """
@@ -871,9 +857,73 @@ jobs:
           print("Playwright tests generated.")
           print("================================")
           print("")
-          print(f"Generated {len(generated_tests)} tests.")
+          print(f"Generated {len(generated_tests)} test.")
           print(f"Output: {OUTPUT_FILE}")
           PY
+
+          echo ""
+          echo "================================"
+          echo "Checking generated Playwright test"
+          echo "================================"
+
+          TEST_FILE="tests/generated/extension.spec.js"
+
+          if [ ! -f "$TEST_FILE" ]; then
+            echo "ERROR: Generated Playwright test file not found."
+            exit 1
+          fi
+
+          echo ""
+          echo "Generated test file:"
+          echo "$TEST_FILE"
+
+          echo ""
+          echo "Checking browser headless configuration..."
+
+          if grep -qE 'headless[[:space:]]*:[[:space:]]*false' "$TEST_FILE"; then
+            echo "ERROR: Generated Playwright test uses headless: false."
+            echo "GitHub Actions requires headless Chromium."
+            exit 1
+          fi
+
+          if grep -q -- "--headed" "$TEST_FILE"; then
+            echo "ERROR: Generated Playwright test contains --headed."
+            echo "GitHub Actions requires headless Chromium."
+            exit 1
+          fi
+
+          if grep -q "chromium.launchPersistentContext" "$TEST_FILE"; then
+            echo "ERROR: Generated test launches Chromium directly."
+            echo "The launchExtension fixture must be used."
+            exit 1
+          fi
+
+          echo "Headless browser configuration VALID."
+
+          echo ""
+          echo "Checking extension fixture usage..."
+
+          if ! grep -q "require('../fixtures/extension')" "$TEST_FILE"; then
+            echo "ERROR: Generated test does not import the extension fixture."
+            exit 1
+          fi
+
+          if ! grep -q "launchExtension()" "$TEST_FILE"; then
+            echo "ERROR: Generated test does not use launchExtension()."
+            exit 1
+          fi
+
+          echo "Extension fixture usage VALID."
+
+          echo ""
+          echo "Checking JavaScript syntax..."
+
+          node --check "$TEST_FILE"
+
+          echo ""
+          echo "================================"
+          echo "Generated Playwright test VALID"
+          echo "================================"
 
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
