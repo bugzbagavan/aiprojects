@@ -614,7 +614,7 @@ jobs:
               test_id = test_case["id"]
               title = test_case.get("title", test_id)
 
-              prompt = f"""
+          prompt = f"""
           You are an expert Playwright automation engineer testing a Chromium
           browser extension.
 
@@ -653,7 +653,7 @@ jobs:
           15. Use the extension service worker to discover the extension ID.
           16. For extension pages, use:
 
-              chrome-extension://${extensionId}/...
+              'chrome-extension://' + extensionId + '/...'
 
           17. Do not invent a manual setup requirement.
           18. If the exact selector is uncertain, use robust selectors.
@@ -677,8 +677,8 @@ jobs:
               const context = await chromium.launchPersistentContext('', {{
                 headless: true,
                 args: [
-                  `--disable-extensions-except=${{extensionPath}}`,
-                  `--load-extension=${{extensionPath}}`
+                  '--disable-extensions-except=' + extensionPath,
+                  '--load-extension=' + extensionPath
                 ]
               }});
 
@@ -694,7 +694,7 @@ jobs:
 
           If the test concerns popup.html, navigate to:
 
-              chrome-extension://${{extensionId}}/popup.html
+              'chrome-extension://' + extensionId + '/popup.html'
 
           Every test must close its browser context using try/finally.
 
