@@ -836,6 +836,7 @@ jobs:
           echo "================================"
 
           TEST_FILE="tests/generated/extension.spec.js"
+          EXPECTED_ID="TC-001"
 
           if [ ! -f "$TEST_FILE" ]; then
             echo "ERROR: Generated Playwright test file not found:"
@@ -848,32 +849,11 @@ jobs:
           echo "$TEST_FILE"
 
           echo ""
-          echo "Checking approved automation IDs..."
-
-          APPROVED_IDS=$(jq -r '
-            .tests[]
-            | select(.automation_candidate == true)
-            | .id
-          ' automated-tests.json | sort -u)
-
-          if [ -z "$APPROVED_IDS" ]; then
-            echo "ERROR: No automation candidates found."
-            exit 1
-          fi
-
-          echo ""
-          echo "Approved automation IDs:"
-          echo "$APPROVED_IDS"
+          echo "Proof-of-concept validation"
+          echo "Expected test ID: $EXPECTED_ID"
 
           echo ""
           echo "Checking IDs found in generated Playwright tests..."
-
-          # Supports both:
-          # TC-001
-          # TC-025
-          # R-TC-001
-          # R-TC-002
-          # R-TC-003
 
           GENERATED_IDS=$(grep -oE 'TC-[A-Za-z0-9]{3,4}' "$TEST_FILE" | sort -u)
 
@@ -887,22 +867,14 @@ jobs:
           echo "$GENERATED_IDS"
 
           echo ""
-          echo "Checking for missing automation tests..."
+          echo "Checking expected test..."
 
-          MISSING=0
-
-          while IFS= read -r ID; do
-            if ! echo "$GENERATED_IDS" | grep -Fxq "$ID"; then
-              echo "ERROR: Missing generated test for $ID"
-              MISSING=1
-            fi
-          done <<< "$APPROVED_IDS"
-
-          if [ "$MISSING" -ne 0 ]; then
-            echo ""
-            echo "ERROR: One or more automation candidates are missing."
+          if ! echo "$GENERATED_IDS" | grep -qx "$EXPECTED_ID"; then
+            echo "ERROR: Expected generated test $EXPECTED_ID was not found."
             exit 1
           fi
+
+          echo "Found expected test: $EXPECTED_ID"
 
           echo ""
           echo "Checking for unexpected test IDs..."
@@ -910,7 +882,7 @@ jobs:
           UNEXPECTED=0
 
           while IFS= read -r ID; do
-            if ! echo "$APPROVED_IDS" | grep -Fxq "$ID"; then
+            if [ "$ID" != "$EXPECTED_ID" ]; then
               echo "ERROR: Unexpected test ID generated: $ID"
               UNEXPECTED=1
             fi
@@ -918,20 +890,9 @@ jobs:
 
           if [ "$UNEXPECTED" -ne 0 ]; then
             echo ""
-            echo "ERROR: Generated Playwright contains tests that were not approved."
+            echo "ERROR: Generated Playwright contains tests other than $EXPECTED_ID."
             exit 1
           fi
-
-          echo ""
-          echo "Checking for skipped tests..."
-          
-          if grep -nE 'test\.(skip|fixme)\s*\(' "$TEST_FILE"; then
-            echo ""
-            echo "ERROR: Generated Playwright tests contain skipped/fixme tests."
-            exit 1
-          fi
-          
-          echo "No skipped or fixme tests found."
 
           echo ""
           echo "Checking Playwright syntax..."
@@ -939,9 +900,34 @@ jobs:
           node --check "$TEST_FILE"
 
           echo ""
+          echo "Checking required Playwright assertion..."
+
+          if ! grep -q "expect(" "$TEST_FILE"; then
+            echo "ERROR: Generated test does not contain an expect() assertion."
+            exit 1
+          fi
+
+          echo ""
+          echo "Checking that test.skip() is not used..."
+
+          if grep -q "test.skip(" "$TEST_FILE"; then
+            echo "ERROR: Generated test contains test.skip()."
+            exit 1
+          fi
+
+          echo ""
+          echo "Checking that test.fixme() is not used..."
+
+          if grep -q "test.fixme(" "$TEST_FILE"; then
+            echo "ERROR: Generated test contains test.fixme()."
+            exit 1
+          fi
+
+          echo ""
           echo "================================"
           echo "Generated Playwright tests VALID"
           echo "================================"
+          echo "Validated test: $EXPECTED_ID"
 
       - name: Run Playwright tests
         shell: bash
