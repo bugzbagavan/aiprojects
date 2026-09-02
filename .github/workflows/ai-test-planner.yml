@@ -668,7 +668,7 @@ jobs:
           19. Use the existing project extension fixture.
           20. Import the fixture using:
 
-              const {{ launchExtension }} = require('../fixtures/extension');
+              const {{ launchExtension }} = require('../../test/fixtures/extension');
 
           21. Obtain the browser context using:
 
@@ -692,7 +692,7 @@ jobs:
           Required imports:
 
               const {{ test, expect }} = require('@playwright/test');
-              const {{ launchExtension }} = require('../fixtures/extension');
+              const {{ launchExtension }} = require('../../test/fixtures/extension')
 
           Use this structure:
 
@@ -832,7 +832,7 @@ jobs:
               print(f"Generated {test_id}")
 
           header = """const { test, expect } = require('@playwright/test');
-          const { launchExtension } = require('../fixtures/extension');
+          const { launchExtension } = require('../../test/fixtures/extension');
 
           test.describe('BugScribe Chrome Extension Tests', () => {
           """
@@ -903,7 +903,7 @@ jobs:
           echo ""
           echo "Checking extension fixture usage..."
 
-          if ! grep -q "require('../fixtures/extension')" "$TEST_FILE"; then
+          if ! grep -q "require('../../test/fixtures/extension')" "$TEST_FILE"; then
             echo "ERROR: Generated test does not import the extension fixture."
             exit 1
           fi
