@@ -696,7 +696,6 @@ jobs:
           with open(AUTOMATED_TESTS, "r", encoding="utf-8") as f:
               data = json.load(f)
 
-          # Find approved automation candidates.
           candidates = [
               t for t in data["tests"]
               if t.get("automation_candidate") is True
@@ -812,7 +811,7 @@ jobs:
 
               const context = await launchExtension();
 
-          The fixture is imported by the generated file wrapper.
+          The fixture import is provided by the generated file wrapper.
           You MUST NOT generate the import yourself.
 
           The fixture is responsible for:
@@ -858,51 +857,46 @@ jobs:
           EXTENSION VERIFICATION
           ============================================================
 
-          IMPORTANT BROWSER/EXTENSION RULES:
-          
           The project already provides:
-          
-          test/fixtures/extension.js
-          
+
+              test/fixtures/extension.js
+
           The fixture exports:
-          
-          const { launchExtension } = require('../../test/fixtures/extension');
-          
+
+              const {{ launchExtension }} = require('../../test/fixtures/extension');
+
           The fixture is responsible for:
-          
-          - launching Chromium
-          - running Chromium headlessly
+
+          - launching Chromium headlessly
           - loading tab-recorder-extension/dist
-          - waiting for the extension service worker
           - returning the Playwright browser context
-          
+
           The generated test MUST use:
-          
-          const context = await launchExtension();
-          
+
+              const context = await launchExtension();
+
           Do NOT import chromium.
-          
+
           Do NOT call:
-          
-          chromium.launch()
-          chromium.launchPersistentContext()
-          context.waitForEvent('serviceworker')
-          
+          - chromium.launch()
+          - chromium.launchPersistentContext()
+          - context.waitForEvent('serviceworker')
+
           Do NOT configure headless mode.
-          
+
           Do NOT create a second browser context.
-          
+
           Do NOT navigate to chrome://extensions.
-          
+
           After launchExtension() returns, the extension is already loaded.
-          
+
           To obtain the extension ID:
-          
-          const serviceWorker = context.serviceWorkers()[0];
-          
-          expect(serviceWorker).toBeTruthy();
-          
-          const extensionId = new URL(serviceWorker.url()).host;
+
+              const serviceWorker = context.serviceWorkers()[0];
+
+              expect(serviceWorker).toBeTruthy();
+
+              const extensionId = new URL(serviceWorker.url()).host;
 
           ============================================================
           SELECTORS AND BROWSER BEHAVIOR
@@ -1113,101 +1107,9 @@ jobs:
           print(f"Output: {OUTPUT_FILE}")
           PY
 
-          # ============================================================
-          # Validate generated file.
-          # ============================================================
-
-          echo ""
-          echo "================================"
-          echo "Checking generated Playwright test"
-          echo "================================"
-
-          TEST_FILE="tests/generated/extension.spec.js"
-
-          if [ ! -f "$TEST_FILE" ]; then
-            echo "ERROR: Generated Playwright test file not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "Generated test file:"
-          echo "--------------------------------"
-          cat "$TEST_FILE"
-          echo "--------------------------------"
-
-          echo ""
-          echo "Checking test count..."
-
-          TEST_COUNT=$(grep -cE "^[[:space:]]*test\\(" "$TEST_FILE" || true)
-
-          if [ "$TEST_COUNT" -ne 1 ]; then
-            echo "ERROR: Expected exactly 1 generated Playwright test."
-            echo "Found: $TEST_COUNT"
-            exit 1
-          fi
-
-          echo "Test count VALID: $TEST_COUNT"
-
-          echo ""
-          echo "Checking TC-001..."
-
-          if ! grep -q "TC-001" "$TEST_FILE"; then
-            echo "ERROR: TC-001 was not generated."
-            exit 1
-          fi
-
-          echo "TC-001 VALID."
-
-          echo ""
-          echo "Checking browser headless configuration..."
-
-          if grep -qE 'headless[[:space:]]*:[[:space:]]*false' "$TEST_FILE"; then
-            echo "ERROR: Generated Playwright test uses headless: false."
-            echo "GitHub Actions requires headless Chromium."
-            exit 1
-          fi
-
-          if grep -q -- "--headed" "$TEST_FILE"; then
-            echo "ERROR: Generated Playwright test contains --headed."
-            echo "GitHub Actions requires headless Chromium."
-            exit 1
-          fi
-
-          if grep -q "chromium.launchPersistentContext" "$TEST_FILE"; then
-            echo "ERROR: Generated test launches Chromium directly."
-            echo "The launchExtension fixture must be used."
-            exit 1
-          fi
-
-          echo "Headless browser configuration VALID."
-
-          echo ""
-          echo "Checking extension fixture usage..."
-
-          if ! grep -q "require('../../test/fixtures/extension')" "$TEST_FILE"; then
-            echo "ERROR: Generated test does not import the extension fixture."
-            exit 1
-          fi
-
-          if ! grep -q "launchExtension()" "$TEST_FILE"; then
-            echo "ERROR: Generated test does not use launchExtension()."
-            exit 1
-          fi
-
-          echo "Extension fixture usage VALID."
-
-          echo ""
-          echo "Checking JavaScript syntax..."
-
-          node --check "$TEST_FILE"
-
-          echo ""
-          echo "================================"
-          echo "Generated Playwright test VALID"
-          echo "================================"
-
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}                
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+                
           
       - name: Validate generated Playwright tests
         shell: bash
