@@ -577,6 +577,102 @@ jobs:
           echo ""
           echo "Extension build verified successfully." 
 
+      - name: Verify built extension files
+        shell: bash
+        run: |
+          echo "================================"
+          echo "Verifying built extension files"
+          echo "================================"
+
+          EXTENSION_DIR="tab-recorder-extension/dist"
+
+          echo ""
+          echo "Extension directory:"
+          echo "$EXTENSION_DIR"
+
+          if [ ! -d "$EXTENSION_DIR" ]; then
+            echo "ERROR: Extension dist directory does not exist."
+            exit 1
+          fi
+
+          echo ""
+          echo "Files in extension dist:"
+          find "$EXTENSION_DIR" -maxdepth 2 -type f | sort
+
+          echo ""
+          echo "Checking manifest.json..."
+
+          if [ ! -f "$EXTENSION_DIR/manifest.json" ]; then
+            echo "ERROR: manifest.json is missing."
+            exit 1
+          fi
+
+          echo "manifest.json found."
+
+          echo ""
+          echo "Checking background.js..."
+
+          if [ ! -f "$EXTENSION_DIR/background.js" ]; then
+            echo "ERROR: background.js is missing from extension dist."
+            echo ""
+            echo "Expected:"
+            echo "$EXTENSION_DIR/background.js"
+            echo ""
+            echo "Available JavaScript files:"
+            find "$EXTENSION_DIR" -type f -name "*.js" | sort
+            exit 1
+          fi
+
+          echo "background.js found."
+
+          echo ""
+          echo "Checking extension manifest..."
+
+          node - <<'NODE'
+          const fs = require('fs');
+
+          const manifestPath = 'tab-recorder-extension/dist/manifest.json';
+          const manifest = JSON.parse(
+            fs.readFileSync(manifestPath, 'utf8')
+          );
+
+          console.log('Manifest version:', manifest.manifest_version);
+          console.log('Extension name:', manifest.name);
+
+          if (manifest.manifest_version !== 3) {
+            console.error('ERROR: Extension is not Manifest V3.');
+            process.exit(1);
+          }
+
+          if (!manifest.background) {
+            console.error('ERROR: Manifest has no background configuration.');
+            process.exit(1);
+          }
+
+          if (manifest.background.service_worker !== 'background.js') {
+            console.error(
+              'ERROR: Manifest service worker is not background.js.'
+            );
+            console.error(
+              'Configured service worker:',
+              manifest.background.service_worker
+            );
+            process.exit(1);
+          }
+
+          console.log(
+            'Service worker:',
+            manifest.background.service_worker
+          );
+
+          console.log('Manifest configuration VALID.');
+          NODE
+
+          echo ""
+          echo "================================"
+          echo "Built extension files VALID"
+          echo "================================"
+
       - name: Generate Playwright tests
         shell: bash
         run: |
@@ -762,31 +858,51 @@ jobs:
           EXTENSION VERIFICATION
           ============================================================
 
-          For extension startup tests, verify the extension through its
-          service worker.
-
-          Use:
-
-              let serviceWorker = context.serviceWorkers()[0];
-
-              if (!serviceWorker) {{
-                serviceWorker = await context.waitForEvent(
-                  'serviceworker',
-                  {{ timeout: 10000 }}
-                );
-              }}
-
-              expect(serviceWorker).toBeTruthy();
-
-          If extension ID is required, obtain it from:
-
-              const extensionId = new URL(serviceWorker.url()).host;
-
-          For extension pages, use:
-
-              'chrome-extension://' + extensionId + '/...'
-
-          Never use chrome://extensions.
+          IMPORTANT BROWSER/EXTENSION RULES:
+          
+          The project already provides:
+          
+          test/fixtures/extension.js
+          
+          The fixture exports:
+          
+          const { launchExtension } = require('../../test/fixtures/extension');
+          
+          The fixture is responsible for:
+          
+          - launching Chromium
+          - running Chromium headlessly
+          - loading tab-recorder-extension/dist
+          - waiting for the extension service worker
+          - returning the Playwright browser context
+          
+          The generated test MUST use:
+          
+          const context = await launchExtension();
+          
+          Do NOT import chromium.
+          
+          Do NOT call:
+          
+          chromium.launch()
+          chromium.launchPersistentContext()
+          context.waitForEvent('serviceworker')
+          
+          Do NOT configure headless mode.
+          
+          Do NOT create a second browser context.
+          
+          Do NOT navigate to chrome://extensions.
+          
+          After launchExtension() returns, the extension is already loaded.
+          
+          To obtain the extension ID:
+          
+          const serviceWorker = context.serviceWorkers()[0];
+          
+          expect(serviceWorker).toBeTruthy();
+          
+          const extensionId = new URL(serviceWorker.url()).host;
 
           ============================================================
           SELECTORS AND BROWSER BEHAVIOR
