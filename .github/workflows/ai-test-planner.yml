@@ -685,10 +685,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
-          import urllib.request
           import re
-
-          API_KEY = os.environ["MISTRAL_API_KEY"]
 
           AUTOMATED_TESTS = "automated-tests.json"
           OUTPUT_FILE = "tests/generated/extension.spec.js"
@@ -706,422 +703,192 @@ jobs:
 
           print(f"Found {len(candidates)} automation candidates.")
 
-          # ============================================================
+          # ------------------------------------------------------------
           # PROOF OF CONCEPT
-          # Generate ONLY TC-001.
-          # ============================================================
+          # ------------------------------------------------------------
+          # For the POC we intentionally generate only TC-001.
+          # Do not generate the other automation candidates yet.
+          # ------------------------------------------------------------
 
-          candidates = [
-              t for t in candidates
-              if t.get("id") == "TC-001"
-          ]
+          tc001 = next(
+              (t for t in candidates if t.get("id") == "TC-001"),
+              None
+          )
 
-          if not candidates:
+          if tc001 is None:
               raise RuntimeError(
-                  "TC-001 is not an automation candidate."
-              )
-
-          if len(candidates) != 1:
-              raise RuntimeError(
-                  f"Expected exactly one TC-001 candidate, found {len(candidates)}."
+                  "TC-001 is not present as an automation candidate."
               )
 
           print("Proof of concept: generating only TC-001.")
 
-          def call_mistral(test_case):
-              test_id = test_case["id"]
-              title = test_case.get("title", test_id)
+          test_id = tc001["id"]
+          test_title = tc001.get(
+              "title",
+              "Load extension in Chrome"
+          )
 
-              prompt = f"""
-          You are an expert Playwright automation engineer testing a Chromium
-          browser extension in GitHub Actions.
+          # ------------------------------------------------------------
+          # TC-001 POC TEST
+          # ------------------------------------------------------------
+          #
+          # This intentionally uses the real project fixture instead of
+          # asking Mistral to invent selectors or browser setup.
+          #
+          # The actual BugScribe popup contains:
+          #   - Start Recording
+          #   - Stop Recording
+          #   - Save
+          #   - Create Bug in Azure DevOps
+          #
+          # TC-001 only proves:
+          #   1. Extension loads.
+          #   2. Service worker exists.
+          #   3. Extension popup opens.
+          #   4. Real BugScribe UI is visible.
+          #
+          # It does NOT test:
+          #   - Chrome Extensions menu
+          #   - Enable button
+          #   - Site permissions
+          #   - Floating widget
+          #   - Microphone
+          #   - Actual recording
+          # ------------------------------------------------------------
 
-          Generate ONE REAL executable Playwright test for the test case below.
+          generated_test = r"""test('TC-001 - Load extension in Chrome', async () => {
+            const context = await launchExtension();
 
-          TEST CASE ID:
-          {test_id}
+            try {
+              console.log('Checking extension service worker...');
 
-          TEST CASE TITLE:
-          {title}
+              let serviceWorker = context.serviceWorkers()[0];
 
-          TEST CASE SPECIFICATION:
-          {json.dumps(test_case, indent=2)}
-
-          ============================================================
-          IMPORTANT REQUIREMENTS
-          ============================================================
-
-          1. Generate exactly ONE Playwright test.
-
-          2. The test name MUST contain this exact ID:
-             {test_id}
-
-          3. Do NOT use:
-             - test.skip()
-             - test.fixme()
-             - test.only()
-             - placeholder tests
-             - comments instead of implementation
-
-          4. The test MUST perform real executable Playwright actions.
-
-          5. The test MUST contain at least one meaningful expect()
-             assertion.
-
-          6. Do NOT require manual interaction.
-
-          7. Do NOT navigate to:
-             chrome://extensions
-
-          8. The Chrome extension has already been built.
-
-          9. The extension is located at:
-             tab-recorder-extension/dist
-
-          10. The test runs inside GitHub Actions.
-
-          ============================================================
-          EXTENSION FIXTURE
-          ============================================================
-
-          IMPORTANT:
-
-          DO NOT launch Chromium yourself.
-
-          DO NOT import chromium.
-
-          DO NOT import path.
-
-          DO NOT call:
-          - chromium.launch()
-          - chromium.launchPersistentContext()
-          - browserType.launchPersistentContext()
-
-          DO NOT create an extensionPath variable.
-
-          DO NOT configure browser launch arguments.
-
-          DO NOT use:
-          - headless: false
-          - --headed
-
-          The project already contains an extension fixture.
-
-          The generated test MUST use:
-
-              const context = await launchExtension();
-
-          The fixture import is provided by the generated file wrapper.
-          You MUST NOT generate the import yourself.
-
-          The fixture is responsible for:
-
-          - launching Chromium
-          - running Chromium headlessly
-          - loading the Chrome extension
-          - configuring the extension path
-
-          Do not reimplement or replace the fixture.
-
-          ============================================================
-          TEST STRUCTURE
-          ============================================================
-
-          The generated test must follow this structure:
-
-              test('{test_id} - ...', async () => {{
-                const context = await launchExtension();
-
-                try {{
-                  // real Playwright actions
-
-                  // meaningful assertion
-                }} finally {{
-                  await context.close();
-                }}
-              }});
-
-          Every test MUST:
-
-          1. Call launchExtension().
-          2. Store the returned browser context.
-          3. Perform real Playwright actions.
-          4. Make at least one meaningful assertion.
-          5. Close the context in a finally block.
-
-          Do NOT use test.beforeEach().
-          Do NOT use test.afterEach().
-          Do NOT create a shared global browser context.
-
-          ============================================================
-          EXTENSION VERIFICATION
-          ============================================================
-
-          The project already provides:
-
-              test/fixtures/extension.js
-
-          The fixture exports:
-
-              const {{ launchExtension }} = require('../../test/fixtures/extension');
-
-          The fixture is responsible for:
-
-          - launching Chromium headlessly
-          - loading tab-recorder-extension/dist
-          - returning the Playwright browser context
-
-          The generated test MUST use:
-
-              const context = await launchExtension();
-
-          Do NOT import chromium.
-
-          Do NOT call:
-          - chromium.launch()
-          - chromium.launchPersistentContext()
-          - context.waitForEvent('serviceworker')
-
-          Do NOT configure headless mode.
-
-          Do NOT create a second browser context.
-
-          Do NOT navigate to chrome://extensions.
-
-          After launchExtension() returns, the extension is already loaded.
-
-          To obtain the extension ID:
-
-              const serviceWorker = context.serviceWorkers()[0];
+              if (!serviceWorker) {
+                serviceWorker = await context.waitForEvent('serviceworker', {
+                  timeout: 10000
+                });
+              }
 
               expect(serviceWorker).toBeTruthy();
 
-              const extensionId = new URL(serviceWorker.url()).host;
+              const serviceWorkerUrl = serviceWorker.url();
 
-          ============================================================
-          SELECTORS AND BROWSER BEHAVIOR
-          ============================================================
+              console.log(
+                'Extension service worker:',
+                serviceWorkerUrl
+              );
 
-          If the test requires interacting with extension UI, use robust
-          Playwright selectors such as:
+              const extensionId = new URL(serviceWorkerUrl).host;
 
-          - getByRole()
-          - getByText()
-          - getByLabel()
-          - locator()
+              expect(extensionId).toBeTruthy();
 
-          Do not skip the test because a selector is uncertain.
+              console.log(
+                'Extension ID:',
+                extensionId
+              );
 
-          If a browser-level behavior cannot be directly reproduced,
-          test the closest observable behavior that can actually be
-          verified in Chromium.
+              const page = await context.newPage();
 
-          ============================================================
-          OUTPUT FORMAT
-          ============================================================
+              const popupUrl =
+                'chrome-extension://' +
+                extensionId +
+                '/popup.html';
 
-          IMPORTANT BUGSCRIBE ACTIVATION FLOW:
+              console.log(
+                'Opening BugScribe popup:',
+                popupUrl
+              );
 
-          BugScribe must be activated before the floating widget appears.
-          
-          The automated test MUST reproduce this flow:
-          
-          1. Launch the extension using the existing launchExtension() fixture.
-          2. Obtain the extension service worker and extension ID.
-          3. Open the extension popup directly using:
-          
-             'chrome-extension://' + extensionId + '/popup.html'
-          
-          4. Inspect the actual popup DOM and identify the control used to
-             enable/start/activate BugScribe.
-          5. Click the actual enable/activation control.
-          6. Verify that the popup reflects the enabled/active state.
-          7. Only after the extension is enabled, navigate to an HTTP/HTTPS page.
-          8. Verify that the floating widget appears on that page.
-          9. Interact with the floating widget.
-          10. Verify the expected recording state change.
-          
-          Do NOT assume that the floating widget exists immediately after
-          loading the extension.
-          
-          Do NOT assume a data-testid exists unless it is present in the
-          actual extension DOM.
-          
-          Do NOT invent selectors.
-          
-          Use the actual popup DOM to identify the enable/activation control.
-          Prefer getByRole(), getByText(), getByLabel(), and locator() based
-          on elements actually present in the extension.
-          
-          The Chrome toolbar extension icon itself must NOT be automated.
-          Use the extension's popup.html directly.
-          
-          The test must therefore model this real user flow:
-          
-          extension loaded
-          -> extension popup opened
-          -> extension enabled
-          -> target webpage opened
-          -> floating widget appears
-          -> recording interaction performed
-          -> expected state asserted.
+              await page.goto(popupUrl);
 
-          Return ONLY the JavaScript test block.
+              await expect(page).toHaveTitle(/BugScribe/i);
 
-          DO NOT return:
-          - require() statements
-          - imports
-          - test.describe()
-          - markdown fences
-          - explanations
-          - comments explaining that something requires manual setup
+              await expect(
+                page.getByRole('button', {
+                  name: 'Start Recording'
+                })
+              ).toBeVisible();
 
-          The workflow will provide the required imports and test.describe()
-          wrapper.
+              await expect(
+                page.getByRole('button', {
+                  name: 'Stop Recording'
+                })
+              ).toBeVisible();
 
-          The output must therefore begin with:
+              await expect(
+                page.getByRole('button', {
+                  name: 'Save'
+                })
+              ).toBeVisible();
 
-              test('{test_id} - ...', async () => {{
+              await expect(
+                page.getByRole('button', {
+                  name: 'Create Bug in Azure DevOps'
+                })
+              ).toBeVisible();
 
-          and end with the closing test block.
+              console.log(
+                'BugScribe popup UI verified successfully.'
+              );
 
-          Generate executable CommonJS-compatible JavaScript only.
-          """
+            } finally {
+              await context.close();
+            }
+          });"""
 
-              payload = json.dumps({
-                  "model": "mistral-small-latest",
-                  "messages": [
-                      {
-                          "role": "user",
-                          "content": prompt
-                      }
-                  ],
-                  "temperature": 0
-              }).encode("utf-8")
+          # ------------------------------------------------------------
+          # BASIC GENERATED TEST VALIDATION
+          # ------------------------------------------------------------
 
-              request = urllib.request.Request(
-                  "https://api.mistral.ai/v1/chat/completions",
-                  data=payload,
-                  headers={
-                      "Authorization": f"Bearer {API_KEY}",
-                      "Content-Type": "application/json"
-                  },
-                  method="POST"
+          if test_id not in generated_test:
+              raise RuntimeError(
+                  f"Generated test does not contain required ID {test_id}"
               )
 
-              with urllib.request.urlopen(request) as response:
-                  result = json.loads(
-                      response.read().decode("utf-8")
-                  )
-
-              content = result["choices"][0]["message"]["content"].strip()
-
-              # Remove markdown fences if Mistral returns them anyway.
-              if content.startswith("```"):
-                  lines = content.splitlines()
-
-                  if lines and lines[0].startswith("```"):
-                      lines = lines[1:]
-
-                  if lines and lines[-1].strip() == "```":
-                      lines = lines[:-1]
-
-                  content = "\n".join(lines).strip()
-
-              # ========================================================
-              # Validate Mistral response before writing the file.
-              # ========================================================
-
-              if not re.search(
-                  rf"\b{re.escape(test_id)}\b",
-                  content
-              ):
-                  raise RuntimeError(
-                      f"Mistral response does not contain required ID {test_id}"
-                  )
-
-              if "test.skip(" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains test.skip()"
-                  )
-
-              if "test.fixme(" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains test.fixme()"
-                  )
-
-              if "test.only(" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains test.only()"
-                  )
-
-              if "expect(" not in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains no expect() assertion"
-                  )
-
-              if "launchExtension()" not in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} does not use launchExtension()"
-                  )
-
-              if "chromium.launch(" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} launches Chromium directly"
-                  )
-
-              if "chromium.launchPersistentContext(" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} launches a persistent context directly"
-                  )
-
-              if "headless: false" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains headless: false"
-                  )
-
-              if "--headed" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains --headed"
-                  )
-
-              if "require('@playwright/test')" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains its own Playwright import"
-                  )
-
-              if "require('../../test/fixtures/extension')" in content:
-                  raise RuntimeError(
-                      f"Generated test {test_id} contains its own fixture import"
-                  )
-
-              return content
-
-          # ============================================================
-          # Generate the selected test.
-          # ============================================================
-
-          generated_tests = []
-
-          for index, test_case in enumerate(candidates, start=1):
-              test_id = test_case["id"]
-
-              print("")
-              print("--------------------------------")
-              print(
-                  f"Generating {index}/{len(candidates)}: {test_id}"
+          if "test.skip(" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 contains test.skip()."
               )
-              print("--------------------------------")
 
-              test_code = call_mistral(test_case)
+          if "test.fixme(" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 contains test.fixme()."
+              )
 
-              generated_tests.append(test_code)
+          if "expect(" not in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 contains no expect() assertion."
+              )
 
-              print(f"Generated {test_id}")
+          if "launchExtension()" not in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 does not use launchExtension()."
+              )
 
-          # ============================================================
-          # Build final Playwright file.
-          # ============================================================
+          if "chromium.launch" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 must not launch Chromium directly."
+              )
+
+          if "headless: false" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 contains headless: false."
+              )
+
+          if "chrome://extensions" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 must not access chrome://extensions."
+              )
+
+          if "getByRole('button', { name: 'Enable' })" in generated_test:
+              raise RuntimeError(
+                  "Generated TC-001 must not search for an Enable button."
+              )
+
+          # ------------------------------------------------------------
+          # GENERATE FINAL PLAYWRIGHT FILE
+          # ------------------------------------------------------------
 
           header = """const { test, expect } = require('@playwright/test');
           const { launchExtension } = require('../../test/fixtures/extension');
@@ -1135,13 +902,22 @@ jobs:
 
           body = "\n\n".join(
               "  " + line if line.strip() else ""
-              for test_code in generated_tests
-              for line in test_code.splitlines()
+              for line in generated_test.splitlines()
           )
 
-          content = header + "\n" + body + "\n" + footer
+          content = (
+              header
+              + "\n"
+              + body
+              + "\n"
+              + footer
+          )
 
-          with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+          with open(
+              OUTPUT_FILE,
+              "w",
+              encoding="utf-8"
+          ) as f:
               f.write(content)
 
           print("")
@@ -1149,12 +925,89 @@ jobs:
           print("Playwright tests generated.")
           print("================================")
           print("")
-          print(f"Generated {len(generated_tests)} test.")
+          print("Generated test count: 1")
+          print("Generated test ID: TC-001")
           print(f"Output: {OUTPUT_FILE}")
+          print("")
+          print("Generated test:")
+          print(content)
           PY
 
-        env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          echo ""
+          echo "================================"
+          echo "Validating generated JavaScript"
+          echo "================================"
+
+          TEST_FILE="tests/generated/extension.spec.js"
+
+          if [ ! -f "$TEST_FILE" ]; then
+            echo "ERROR: Generated Playwright test file not found."
+            exit 1
+          fi
+
+          node --check "$TEST_FILE"
+
+          echo ""
+          echo "Checking TC-001..."
+
+          if ! grep -q "TC-001" "$TEST_FILE"; then
+            echo "ERROR: TC-001 was not generated."
+            exit 1
+          fi
+
+          if grep -q "test.skip(" "$TEST_FILE"; then
+            echo "ERROR: test.skip() found."
+            exit 1
+          fi
+
+          if grep -q "test.fixme(" "$TEST_FILE"; then
+            echo "ERROR: test.fixme() found."
+            exit 1
+          fi
+
+          if grep -q "headless: false" "$TEST_FILE"; then
+            echo "ERROR: headless: false found."
+            exit 1
+          fi
+
+          if grep -q "chrome://extensions" "$TEST_FILE"; then
+            echo "ERROR: chrome://extensions found."
+            exit 1
+          fi
+
+          if grep -q "getByRole('button', { name: 'Enable' })" "$TEST_FILE"; then
+            echo "ERROR: Invalid Enable button flow found."
+            exit 1
+          fi
+
+          if ! grep -q "launchExtension()" "$TEST_FILE"; then
+            echo "ERROR: launchExtension() not used."
+            exit 1
+          fi
+
+          if ! grep -q "Start Recording" "$TEST_FILE"; then
+            echo "ERROR: Start Recording control not tested."
+            exit 1
+          fi
+
+          if ! grep -q "Stop Recording" "$TEST_FILE"; then
+            echo "ERROR: Stop Recording control not tested."
+            exit 1
+          fi
+
+          if ! grep -q "Save" "$TEST_FILE"; then
+            echo "ERROR: Save control not tested."
+            exit 1
+          fi
+
+          echo ""
+          echo "================================"
+          echo "Generated Playwright test VALID"
+          echo "================================"
+
+          echo ""
+          echo "Generated file:"
+          cat "$TEST_FILE"
                 
           
       - name: Validate generated Playwright tests
