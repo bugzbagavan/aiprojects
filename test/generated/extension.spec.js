@@ -2,25 +2,20 @@ const { test, expect } = require('@playwright/test');
 const { launchExtension } = require('../fixtures/extension');
 
 test.describe('BugScribe Chrome Extension Tests', () => {
-  let context;
-
-  test.beforeEach(async () => {
-    context = await launchExtension();
-  });
-
-  test.afterEach(async () => {
-    await context.close();
-  });
-
   test('TC-001 - Load extension in Chrome', async () => {
-    const serviceWorkers = context.serviceWorkers();
+    const context = await launchExtension();
 
-    expect(serviceWorkers.length).toBeGreaterThan(0);
-  });
+    try {
+      const serviceWorkers = context.serviceWorkers();
 
-  test('TC-002 - Verify extension UI appears', async () => {
-    const extensionPages = context.pages();
+      expect(serviceWorkers.length).toBeGreaterThan(0);
 
-    expect(extensionPages.length).toBeGreaterThanOrEqual(0);
+      const serviceWorker = serviceWorkers[0];
+
+      expect(serviceWorker).toBeTruthy();
+      expect(serviceWorker.url()).toMatch(/^chrome-extension:\/\//);
+    } finally {
+      await context.close();
+    }
   });
 });
