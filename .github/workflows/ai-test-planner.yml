@@ -920,6 +920,52 @@ jobs:
           OUTPUT FORMAT
           ============================================================
 
+          IMPORTANT BUGSCRIBE ACTIVATION FLOW:
+
+          BugScribe must be activated before the floating widget appears.
+          
+          The automated test MUST reproduce this flow:
+          
+          1. Launch the extension using the existing launchExtension() fixture.
+          2. Obtain the extension service worker and extension ID.
+          3. Open the extension popup directly using:
+          
+             'chrome-extension://' + extensionId + '/popup.html'
+          
+          4. Inspect the actual popup DOM and identify the control used to
+             enable/start/activate BugScribe.
+          5. Click the actual enable/activation control.
+          6. Verify that the popup reflects the enabled/active state.
+          7. Only after the extension is enabled, navigate to an HTTP/HTTPS page.
+          8. Verify that the floating widget appears on that page.
+          9. Interact with the floating widget.
+          10. Verify the expected recording state change.
+          
+          Do NOT assume that the floating widget exists immediately after
+          loading the extension.
+          
+          Do NOT assume a data-testid exists unless it is present in the
+          actual extension DOM.
+          
+          Do NOT invent selectors.
+          
+          Use the actual popup DOM to identify the enable/activation control.
+          Prefer getByRole(), getByText(), getByLabel(), and locator() based
+          on elements actually present in the extension.
+          
+          The Chrome toolbar extension icon itself must NOT be automated.
+          Use the extension's popup.html directly.
+          
+          The test must therefore model this real user flow:
+          
+          extension loaded
+          -> extension popup opened
+          -> extension enabled
+          -> target webpage opened
+          -> floating widget appears
+          -> recording interaction performed
+          -> expected state asserted.
+
           Return ONLY the JavaScript test block.
 
           DO NOT return:
