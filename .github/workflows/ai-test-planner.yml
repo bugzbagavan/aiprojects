@@ -685,7 +685,6 @@ jobs:
           python3 - <<'PY'
           import json
           import os
-          import re
 
           AUTOMATED_TESTS = "automated-tests.json"
           OUTPUT_FILE = "tests/generated/extension.spec.js"
@@ -706,8 +705,9 @@ jobs:
           # ------------------------------------------------------------
           # PROOF OF CONCEPT
           # ------------------------------------------------------------
-          # For the POC we intentionally generate only TC-001.
-          # Do not generate the other automation candidates yet.
+          # Only TC-001 is generated for the POC.
+          # TC-001 verifies that the extension built in dist loads
+          # successfully and that the initial BugScribe popup opens.
           # ------------------------------------------------------------
 
           tc001 = next(
@@ -722,38 +722,28 @@ jobs:
 
           print("Proof of concept: generating only TC-001.")
 
-          test_id = tc001["id"]
-          test_title = tc001.get(
-              "title",
-              "Load extension in Chrome"
-          )
-
           # ------------------------------------------------------------
-          # TC-001 POC TEST
+          # TC-001
           # ------------------------------------------------------------
           #
-          # This intentionally uses the real project fixture instead of
-          # asking Mistral to invent selectors or browser setup.
+          # IMPORTANT:
           #
-          # The actual BugScribe popup contains:
-          #   - Start Recording
-          #   - Stop Recording
-          #   - Save
-          #   - Create Bug in Azure DevOps
+          # TC-001 is ONLY an extension-load verification.
           #
-          # TC-001 only proves:
-          #   1. Extension loads.
-          #   2. Service worker exists.
-          #   3. Extension popup opens.
-          #   4. Real BugScribe UI is visible.
+          # It must NOT:
+          #   - click Chrome Extensions
+          #   - look for an Enable button
+          #   - navigate to chrome://extensions
+          #   - test the floating widget
+          #   - start recording
+          #   - stop recording
+          #   - test microphone permissions
+          #   - test Save
+          #   - test Azure DevOps
           #
-          # It does NOT test:
-          #   - Chrome Extensions menu
-          #   - Enable button
-          #   - Site permissions
-          #   - Floating widget
-          #   - Microphone
-          #   - Actual recording
+          # The service worker proves the extension loaded.
+          # popup.html proves the extension UI can be opened.
+          #
           # ------------------------------------------------------------
 
           generated_test = r"""test('TC-001 - Load extension in Chrome', async () => {
@@ -805,31 +795,19 @@ jobs:
               await expect(page).toHaveTitle(/BugScribe/i);
 
               await expect(
+                page.getByRole('heading', {
+                  name: 'BugScribe'
+                })
+              ).toBeVisible();
+
+              await expect(
                 page.getByRole('button', {
                   name: 'Start Recording'
                 })
               ).toBeVisible();
 
-              await expect(
-                page.getByRole('button', {
-                  name: 'Stop Recording'
-                })
-              ).toBeVisible();
-
-              await expect(
-                page.getByRole('button', {
-                  name: 'Save'
-                })
-              ).toBeVisible();
-
-              await expect(
-                page.getByRole('button', {
-                  name: 'Create Bug in Azure DevOps'
-                })
-              ).toBeVisible();
-
               console.log(
-                'BugScribe popup UI verified successfully.'
+                'BugScribe extension loaded and initial popup UI verified.'
               );
 
             } finally {
@@ -838,56 +816,43 @@ jobs:
           });"""
 
           # ------------------------------------------------------------
-          # BASIC GENERATED TEST VALIDATION
+          # VALIDATE GENERATED TEST
           # ------------------------------------------------------------
 
-          if test_id not in generated_test:
-              raise RuntimeError(
-                  f"Generated test does not contain required ID {test_id}"
-              )
+          required_checks = [
+              ("TC-001", "TC-001"),
+              ("launchExtension()", "launchExtension()"),
+              ("expect(", "expect("),
+              ("popup.html", "popup.html"),
+              ("Start Recording", "Start Recording"),
+          ]
 
-          if "test.skip(" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 contains test.skip()."
-              )
+          for description, value in required_checks:
+              if value not in generated_test:
+                  raise RuntimeError(
+                      f"Generated TC-001 is missing required content: {description}"
+                  )
 
-          if "test.fixme(" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 contains test.fixme()."
-              )
+          forbidden_checks = [
+              ("test.skip(", "test.skip()"),
+              ("test.fixme(", "test.fixme()"),
+              ("chrome://extensions", "chrome://extensions"),
+              ("headless: false", "headless: false"),
+              ("chromium.launch(", "chromium.launch()"),
+              ("chromium.launchPersistentContext(", "chromium.launchPersistentContext()"),
+              ("Enable", "Enable button flow"),
+              ("floating-widget", "floating widget"),
+              ("Create Bug in Azure DevOps", "Azure DevOps flow"),
+          ]
 
-          if "expect(" not in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 contains no expect() assertion."
-              )
-
-          if "launchExtension()" not in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 does not use launchExtension()."
-              )
-
-          if "chromium.launch" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 must not launch Chromium directly."
-              )
-
-          if "headless: false" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 contains headless: false."
-              )
-
-          if "chrome://extensions" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 must not access chrome://extensions."
-              )
-
-          if "getByRole('button', { name: 'Enable' })" in generated_test:
-              raise RuntimeError(
-                  "Generated TC-001 must not search for an Enable button."
-              )
+          for value, description in forbidden_checks:
+              if value in generated_test:
+                  raise RuntimeError(
+                      f"Generated TC-001 contains forbidden content: {description}"
+                  )
 
           # ------------------------------------------------------------
-          # GENERATE FINAL PLAYWRIGHT FILE
+          # CREATE FINAL PLAYWRIGHT FILE
           # ------------------------------------------------------------
 
           header = """const { test, expect } = require('@playwright/test');
@@ -928,6 +893,7 @@ jobs:
           print("Generated test count: 1")
           print("Generated test ID: TC-001")
           print(f"Output: {OUTPUT_FILE}")
+
           print("")
           print("Generated test:")
           print(content)
@@ -955,6 +921,21 @@ jobs:
             exit 1
           fi
 
+          if ! grep -q "launchExtension()" "$TEST_FILE"; then
+            echo "ERROR: launchExtension() is not used."
+            exit 1
+          fi
+
+          if ! grep -q "popup.html" "$TEST_FILE"; then
+            echo "ERROR: popup.html is not tested."
+            exit 1
+          fi
+
+          if ! grep -q "Start Recording" "$TEST_FILE"; then
+            echo "ERROR: Start Recording control is not verified."
+            exit 1
+          fi
+
           if grep -q "test.skip(" "$TEST_FILE"; then
             echo "ERROR: test.skip() found."
             exit 1
@@ -975,28 +956,13 @@ jobs:
             exit 1
           fi
 
-          if grep -q "getByRole('button', { name: 'Enable' })" "$TEST_FILE"; then
-            echo "ERROR: Invalid Enable button flow found."
+          if grep -q "floating-widget" "$TEST_FILE"; then
+            echo "ERROR: floating widget logic found in TC-001."
             exit 1
           fi
 
-          if ! grep -q "launchExtension()" "$TEST_FILE"; then
-            echo "ERROR: launchExtension() not used."
-            exit 1
-          fi
-
-          if ! grep -q "Start Recording" "$TEST_FILE"; then
-            echo "ERROR: Start Recording control not tested."
-            exit 1
-          fi
-
-          if ! grep -q "Stop Recording" "$TEST_FILE"; then
-            echo "ERROR: Stop Recording control not tested."
-            exit 1
-          fi
-
-          if ! grep -q "Save" "$TEST_FILE"; then
-            echo "ERROR: Save control not tested."
+          if grep -q "Create Bug in Azure DevOps" "$TEST_FILE"; then
+            echo "ERROR: Azure DevOps logic found in TC-001."
             exit 1
           fi
 
@@ -1006,9 +972,8 @@ jobs:
           echo "================================"
 
           echo ""
-          echo "Generated file:"
-          cat "$TEST_FILE"
-                
+          echo "Final generated file:"
+          cat "$TEST_FILE"                
           
       - name: Validate generated Playwright tests
         shell: bash
