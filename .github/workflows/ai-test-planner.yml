@@ -100,74 +100,13 @@ jobs:
           name: test-planner-input
           path: test-planner-input.md
 
-      - name: Generate test plan with Mistral
+        - name: Generate test plan and specification with Mistral
         shell: bash
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
         run: |
-          echo "Calling Mistral AI..."
-
-          PROMPT=$(cat test-planner-input.md)
-
-          RESPONSE=$(curl -sS https://api.mistral.ai/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $MISTRAL_API_KEY" \
-            -d "$(jq -n \
-              --arg model "mistral-small-latest" \
-              --arg prompt "$PROMPT" \
-              '{
-                model: $model,
-                messages: [
-                  {
-                    role: "system",
-                    content: "You are an expert software QA engineer. Analyze the project documentation and git changes. Create a practical test plan with test cases, priorities, affected areas, and regression tests."
-                  },
-                  {
-                    role: "user",
-                    content: $prompt
-                  }
-                ],
-                temperature: 0.2
-              }'
-            )")
-
-          echo "Mistral response received."
-
-          echo "$RESPONSE" > mistral-response.json
-
-          TEST_PLAN=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
-
-          if [ -z "$TEST_PLAN" ]; then
-            echo "ERROR: Mistral returned no test plan."
-            echo ""
-            echo "Mistral response:"
-            jq . mistral-response.json
-            exit 1
-          fi
-
-          echo ""
           echo "================================"
-          echo "Generated Test Plan"
-          echo "================================"
-          echo "$TEST_PLAN"
-
-          printf '%s\n' "$TEST_PLAN" > test-plan.md
-
-          echo ""
-          echo "Test plan saved to test-plan.md"
-          wc -c test-plan.md
-
-      - name: Upload test plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-test-plan
-          path: test-plan.md          
-
-      - name: Build automated test specification
-        shell: bash
-        run: |
-          echo "================================"
-          echo "Building automated test specification"
+          echo "Generating test plan and specification"
           echo "================================"
 
           python3 - <<'PY'
@@ -178,192 +117,822 @@ jobs:
           import urllib.error
           import urllib.request
 
-          api_key = os.environ["MISTRAL_API_KEY"]
+          API_KEY = os.environ["MISTRAL_API_KEY"]
 
-          with open("test-plan.md", "r", encoding="utf-8") as f:
-              test_plan = f.read()
+          INPUT_FILE = "test-planner-input.md"
+          TEST_PLAN_FILE = "test-plan.md"
+          TEST_SPEC_FILE = "test-spec.json"
 
-          prompt = """
-          You are an expert QA automation engineer.
+          # ------------------------------------------------------------
+          # TOKEN OPTIMIZATION
+          # ------------------------------------------------------------
+          #
+          # The complete project context can be large.
+          #
+          # Limit the input sent to Mistral so one workflow execution
+          # does not consume a large portion of the tokens-per-minute
+          # allowance.
+          #
+          # 16,000 characters is intentionally conservative.
+          #
+          # ------------------------------------------------------------
 
-          Convert the following AI-generated test plan into a machine-readable
-          JSON test specification.
+          MAX_INPUT_CHARS = 16000
+
+          # Limit the model response.
+          MAX_OUTPUT_TOKENS = 3000
+
+          if not os.path.isfile(INPUT_FILE):
+              raise RuntimeError(
+                  f"Required input file not found: {INPUT_FILE}"
+              )
+
+          with open(
+              INPUT_FILE,
+              "r",
+              encoding="utf-8"
+          ) as f:
+              original_input = f.read()
+
+          original_size = len(original_input)
+
+          print("")
+          print("Original Mistral input size:")
+          print(f"{original_size} characters")
+
+          if original_size > MAX_INPUT_CHARS:
+
+              compact_input = (
+                  original_input[:MAX_INPUT_CHARS]
+                  +
+                  "\n\n"
+                  +
+                  "[INPUT TRUNCATED FOR TOKEN OPTIMIZATION]\n"
+                  +
+                  "Focus on the project information and changes "
+                  +
+                  "provided above. Do not assume information that "
+                  +
+                  "is not present."
+              )
+
+              print("")
+              print(
+                  "Input exceeds configured limit."
+              )
+
+              print(
+                  f"Truncating input to "
+                  f"{MAX_INPUT_CHARS} characters."
+              )
+
+          else:
+              compact_input = original_input
+
+          print("")
+          print("Mistral input size:")
+          print(f"{len(compact_input)} characters")
+
+          print("")
+          print(
+              "Mistral API calls for this workflow: 1"
+          )
+
+          # ------------------------------------------------------------
+          # SINGLE MISTRAL REQUEST
+          # ------------------------------------------------------------
+          #
+          # The model directly creates the machine-readable
+          # test specification.
+          #
+          # This removes the previous second Mistral API call that
+          # converted test-plan.md into test-spec.json.
+          #
+          # ------------------------------------------------------------
+
+          system_prompt = """
+          You are an expert software QA and test automation engineer.
+
+          Analyze the supplied project context and create a practical,
+          concise test specification.
 
           Return ONLY valid JSON.
-          Do not use markdown fences.
-          Do not add explanations.
 
-          Required structure:
+          Do not use markdown.
+
+          Do not add explanations outside the JSON.
+
+          The JSON must use this structure:
 
           {
-            "project": "...",
+            "project": "project name",
             "tests": [
               {
                 "id": "TC-001",
-                "title": "...",
+                "title": "short test title",
                 "priority": "P0",
                 "category": "functional",
-                "steps": ["..."],
-                "expected_result": "...",
-                "affected_files": ["..."],
+                "steps": [
+                  "step 1",
+                  "step 2"
+                ],
+                "expected_result": "expected result",
+                "affected_files": [
+                  "file/path"
+                ],
                 "automation_candidate": true
               }
             ]
           }
 
           Rules:
-          - Preserve every test case from the test plan.
-          - Preserve the original test case IDs.
-          - Preserve the important steps and expected results.
-          - Use P0, P1, P2 or P3 for priority.
-          - Use functional, ui_ux, performance, compatibility or regression
-            for category.
-          - Set automation_candidate to true when the test can reasonably
-            be automated in a browser/Chrome extension test environment.
-          - Set automation_candidate to false when it requires manual
-            validation or cannot reasonably be automated.
-          - Do not invent test cases.
 
-          TEST PLAN:
-          """ + test_plan
+          1. Generate practical test cases based only on the supplied
+             project context.
 
-          payload = json.dumps({
+          2. Use sequential IDs:
+             TC-001, TC-002, TC-003, and so on.
+
+          3. Use only these priorities:
+             P0, P1, P2, P3.
+
+          4. Use only these categories:
+             functional,
+             ui_ux,
+             performance,
+             compatibility,
+             regression.
+
+          5. Set automation_candidate to true only when the test can
+             reasonably be automated.
+
+          6. Set automation_candidate to false when the test requires
+             manual validation.
+
+          7. Keep steps concise.
+
+          8. Avoid duplicate test cases.
+
+          9. Do not generate unnecessary test cases.
+
+          10. Prefer high-value tests covering changed or affected areas.
+
+          11. Return valid JSON only.
+          """
+
+          user_prompt = """
+          PROJECT CONTEXT:
+
+          """ + compact_input
+
+          payload_data = {
               "model": "mistral-small-latest",
               "messages": [
                   {
                       "role": "system",
-                      "content": (
-                          "You are an expert QA automation engineer. "
-                          "Return strictly valid JSON."
-                      )
+                      "content": system_prompt
                   },
                   {
                       "role": "user",
-                      "content": prompt
+                      "content": user_prompt
                   }
               ],
-              "temperature": 0
-          }).encode("utf-8")
 
-          request = urllib.request.Request(
-              "https://api.mistral.ai/v1/chat/completions",
-              data=payload,
-              headers={
-                  "Authorization": f"Bearer {api_key}",
-                  "Content-Type": "application/json"
-              },
-              method="POST"
-          )
+              # Deterministic output.
+              "temperature": 0,
 
-          max_attempts = 5
+              # Prevent unnecessarily large responses.
+              "max_tokens": MAX_OUTPUT_TOKENS,
 
-          for attempt in range(1, max_attempts + 1):
+              # Force JSON output.
+              "response_format": {
+                  "type": "json_object"
+              }
+          }
+
+          payload = json.dumps(
+              payload_data
+          ).encode("utf-8")
+
+          # ------------------------------------------------------------
+          # API REQUEST
+          # ------------------------------------------------------------
+
+          MAX_ATTEMPTS = 4
+
+          result = None
+
+          for attempt in range(
+              1,
+              MAX_ATTEMPTS + 1
+          ):
+
+              print("")
+              print(
+                  f"Mistral request attempt "
+                  f"{attempt}/{MAX_ATTEMPTS}"
+              )
+
+              request = urllib.request.Request(
+                  "https://api.mistral.ai/v1/chat/completions",
+                  data=payload,
+                  headers={
+                      "Authorization":
+                          f"Bearer {API_KEY}",
+                      "Content-Type":
+                          "application/json"
+                  },
+                  method="POST"
+              )
+
               try:
-                  print(
-                      f"Mistral request attempt "
-                      f"{attempt}/{max_attempts}..."
-                  )
 
                   with urllib.request.urlopen(
                       request,
                       timeout=180
                   ) as response:
+
                       result = json.loads(
-                          response.read().decode("utf-8")
+                          response.read().decode(
+                              "utf-8"
+                          )
                       )
 
-                  print("Mistral request succeeded.")
+                  print("")
+                  print(
+                      "Mistral request succeeded."
+                  )
+
                   break
 
               except urllib.error.HTTPError as e:
-                  body = e.read().decode("utf-8", errors="replace")
 
-                  print(f"Mistral HTTP error: {e.code}")
-                  print(f"Response: {body[:1000]}")
-
-                  # Retry transient server/rate-limit errors.
-                  if e.code not in (429, 500, 502, 503, 504):
-                      raise
-
-                  if attempt == max_attempts:
-                      print(
-                          "Mistral request failed after "
-                          f"{max_attempts} attempts."
-                      )
-                      raise
-
-                  delay = (2 ** (attempt - 1)) + random.uniform(0, 1)
-
-                  print(
-                      f"Transient Mistral error. "
-                      f"Retrying in {delay:.1f}s..."
+                  body = e.read().decode(
+                      "utf-8",
+                      errors="replace"
                   )
 
-                  time.sleep(delay)
+                  print("")
+                  print(
+                      f"Mistral HTTP error: {e.code}"
+                  )
+
+                  print(
+                      f"Response: {body[:1000]}"
+                  )
+
+                  if e.code == 429:
+
+                      if attempt == MAX_ATTEMPTS:
+
+                          print("")
+                          print(
+                              "ERROR: Mistral rate limit "
+                              "was exceeded."
+                          )
+
+                          print(
+                              "The workflow already uses "
+                              "one API call and limits both "
+                              "input and output tokens."
+                          )
+
+                          raise
+
+                      # Use longer delays for a tokens-per-minute
+                      # rate limit.
+                      delay = (
+                          15 * (2 ** (attempt - 1))
+                      ) + random.uniform(0, 3)
+
+                      print("")
+                      print(
+                          "Rate limit encountered."
+                      )
+
+                      print(
+                          f"Retrying in "
+                          f"{delay:.1f} seconds..."
+                      )
+
+                      time.sleep(delay)
+
+                      continue
+
+                  if e.code in (
+                      500,
+                      502,
+                      503,
+                      504
+                  ):
+
+                      if attempt == MAX_ATTEMPTS:
+                          raise
+
+                      delay = (
+                          5 * (2 ** (attempt - 1))
+                      ) + random.uniform(0, 2)
+
+                      print(
+                          f"Transient server error."
+                      )
+
+                      print(
+                          f"Retrying in "
+                          f"{delay:.1f} seconds..."
+                      )
+
+                      time.sleep(delay)
+
+                      continue
+
+                  raise
 
               except urllib.error.URLError as e:
-                  print(f"Network error: {e}")
 
-                  if attempt == max_attempts:
+                  print("")
+                  print(
+                      f"Network error: {e}"
+                  )
+
+                  if attempt == MAX_ATTEMPTS:
                       raise
 
-                  delay = (2 ** (attempt - 1)) + random.uniform(0, 1)
+                  delay = (
+                      5 * (2 ** (attempt - 1))
+                  ) + random.uniform(0, 2)
 
                   print(
-                      f"Network error. "
-                      f"Retrying in {delay:.1f}s..."
+                      f"Retrying in "
+                      f"{delay:.1f} seconds..."
                   )
 
                   time.sleep(delay)
 
-          content = result["choices"][0]["message"]["content"].strip()
+          if result is None:
+              raise RuntimeError(
+                  "Mistral returned no response."
+              )
 
-          if content.startswith("```"):
-              lines = content.splitlines()
-
-              if lines and lines[0].startswith("```"):
-                  lines = lines[1:]
-
-              if lines and lines[-1].strip() == "```":
-                  lines = lines[:-1]
-
-              content = "\n".join(lines).strip()
+          # ------------------------------------------------------------
+          # EXTRACT RESPONSE
+          # ------------------------------------------------------------
 
           try:
-              specification = json.loads(content)
-          except json.JSONDecodeError as e:
-              print("ERROR: Mistral returned invalid JSON.")
-              print(content[:5000])
-              raise e
 
-          if not isinstance(specification, dict):
-              raise ValueError("Specification root must be an object.")
+              content = (
+                  result["choices"][0]
+                  ["message"]["content"]
+              )
+
+          except (
+              KeyError,
+              IndexError,
+              TypeError
+          ):
+
+              print("")
+              print(
+                  "ERROR: Unexpected Mistral response."
+              )
+
+              print(
+                  json.dumps(
+                      result,
+                      indent=2
+                  )[:5000]
+              )
+
+              raise RuntimeError(
+                  "Unable to extract Mistral response."
+              )
+
+          if not isinstance(content, str):
+
+              raise RuntimeError(
+                  "Mistral response content "
+                  "is not a string."
+              )
+
+          content = content.strip()
+
+          if not content:
+
+              raise RuntimeError(
+                  "Mistral returned empty content."
+              )
+
+          # ------------------------------------------------------------
+          # VALIDATE JSON
+          # ------------------------------------------------------------
+
+          try:
+
+              specification = json.loads(
+                  content
+              )
+
+          except json.JSONDecodeError:
+
+              print("")
+              print(
+                  "ERROR: Mistral returned invalid JSON."
+              )
+
+              print("")
+              print(
+                  "Response preview:"
+              )
+
+              print(
+                  content[:5000]
+              )
+
+              raise
+
+          if not isinstance(
+              specification,
+              dict
+          ):
+
+              raise ValueError(
+                  "Specification root must be "
+                  "a JSON object."
+              )
+
+          if "project" not in specification:
+
+              raise ValueError(
+                  "Specification missing 'project'."
+              )
 
           if "tests" not in specification:
-              raise ValueError("Specification missing 'tests'.")
 
-          if not isinstance(specification["tests"], list):
-              raise ValueError("'tests' must be an array.")
+              raise ValueError(
+                  "Specification missing 'tests'."
+              )
 
-          with open("test-spec.json", "w", encoding="utf-8") as f:
-              json.dump(specification, f, indent=2)
+          if not isinstance(
+              specification["tests"],
+              list
+          ):
 
-          print("Automated test specification created.")
+              raise ValueError(
+                  "'tests' must be an array."
+              )
+
+          if not specification["tests"]:
+
+              raise ValueError(
+                  "Mistral generated zero test cases."
+              )
+
+          # ------------------------------------------------------------
+          # NORMALIZE AND VALIDATE TEST CASES
+          # ------------------------------------------------------------
+
+          required_fields = [
+              "id",
+              "title",
+              "priority",
+              "category",
+              "steps",
+              "expected_result",
+              "affected_files",
+              "automation_candidate"
+          ]
+
+          valid_priorities = {
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+          }
+
+          valid_categories = {
+              "functional",
+              "ui_ux",
+              "performance",
+              "compatibility",
+              "regression"
+          }
+
+          seen_ids = set()
+
+          for index, test_case in enumerate(
+              specification["tests"],
+              start=1
+          ):
+
+              if not isinstance(
+                  test_case,
+                  dict
+              ):
+
+                  raise ValueError(
+                      f"Test case {index} "
+                      "is not an object."
+                  )
+
+              for field in required_fields:
+
+                  if field not in test_case:
+
+                      raise ValueError(
+                          f"Test case {index} "
+                          f"is missing '{field}'."
+                      )
+
+              test_id = test_case["id"]
+
+              if not isinstance(
+                  test_id,
+                  str
+              ):
+
+                  raise ValueError(
+                      f"Test case {index} "
+                      "has an invalid ID."
+                  )
+
+              if test_id in seen_ids:
+
+                  raise ValueError(
+                      f"Duplicate test ID: "
+                      f"{test_id}"
+                  )
+
+              seen_ids.add(test_id)
+
+              if (
+                  test_case["priority"]
+                  not in valid_priorities
+              ):
+
+                  raise ValueError(
+                      f"{test_id} has invalid "
+                      "priority."
+                  )
+
+              if (
+                  test_case["category"]
+                  not in valid_categories
+              ):
+
+                  raise ValueError(
+                      f"{test_id} has invalid "
+                      "category."
+                  )
+
+              if not isinstance(
+                  test_case["steps"],
+                  list
+              ):
+
+                  raise ValueError(
+                      f"{test_id} steps "
+                      "must be an array."
+                  )
+
+              if not isinstance(
+                  test_case["affected_files"],
+                  list
+              ):
+
+                  raise ValueError(
+                      f"{test_id} affected_files "
+                      "must be an array."
+                  )
+
+              if not isinstance(
+                  test_case[
+                      "automation_candidate"
+                  ],
+                  bool
+              ):
+
+                  raise ValueError(
+                      f"{test_id} "
+                      "automation_candidate "
+                      "must be boolean."
+                  )
+
+          # ------------------------------------------------------------
+          # SAVE test-spec.json
+          # ------------------------------------------------------------
+
+          with open(
+              TEST_SPEC_FILE,
+              "w",
+              encoding="utf-8"
+          ) as f:
+
+              json.dump(
+                  specification,
+                  f,
+                  indent=2
+              )
+
+          print("")
+          print(
+              "Automated test specification created."
+          )
+
           print(
               f"Test cases: "
-              f"{len(specification.get('tests', []))}"
+              f"{len(specification['tests'])}"
+          )
+
+          # ------------------------------------------------------------
+          # CREATE test-plan.md LOCALLY
+          # ------------------------------------------------------------
+          #
+          # No second Mistral API call.
+          #
+          # The existing workflow still receives test-plan.md.
+          #
+          # ------------------------------------------------------------
+
+          lines = []
+
+          lines.append(
+              "# Generated Test Plan"
+          )
+
+          lines.append("")
+
+          lines.append(
+              f"## Project"
+          )
+
+          lines.append("")
+
+          lines.append(
+              str(
+                  specification["project"]
+              )
+          )
+
+          lines.append("")
+
+          lines.append(
+              "## Test Cases"
+          )
+
+          lines.append("")
+
+          for test_case in specification["tests"]:
+
+              lines.append(
+                  f"### {test_case['id']} - "
+                  f"{test_case['title']}"
+              )
+
+              lines.append("")
+
+              lines.append(
+                  f"- **Priority:** "
+                  f"{test_case['priority']}"
+              )
+
+              lines.append(
+                  f"- **Category:** "
+                  f"{test_case['category']}"
+              )
+
+              lines.append(
+                  f"- **Automation Candidate:** "
+                  f"{str(test_case['automation_candidate']).lower()}"
+              )
+
+              lines.append("")
+
+              lines.append(
+                  "**Steps:**"
+              )
+
+              for step_number, step in enumerate(
+                  test_case["steps"],
+                  start=1
+              ):
+
+                  lines.append(
+                      f"{step_number}. {step}"
+                  )
+
+              lines.append("")
+
+              lines.append(
+                  "**Expected Result:**"
+              )
+
+              lines.append(
+                  str(
+                      test_case[
+                          "expected_result"
+                      ]
+                  )
+              )
+
+              lines.append("")
+
+              if (
+                  test_case[
+                      "affected_files"
+                  ]
+              ):
+
+                  lines.append(
+                      "**Affected Files:**"
+                  )
+
+                  for affected_file in (
+                      test_case[
+                          "affected_files"
+                      ]
+                  ):
+
+                      lines.append(
+                          f"- {affected_file}"
+                      )
+
+                  lines.append("")
+
+          test_plan = "\n".join(lines)
+
+          with open(
+              TEST_PLAN_FILE,
+              "w",
+              encoding="utf-8"
+          ) as f:
+
+              f.write(test_plan)
+
+          print("")
+          print(
+              "Human-readable test plan "
+              "created locally."
+          )
+
+          print("")
+          print(
+              "================================"
+          )
+
+          print(
+              "Mistral processing completed."
+          )
+
+          print(
+              "================================"
+          )
+
+          print("")
+          print(
+              "API calls used: 1"
+          )
+
+          print(
+              f"Maximum input size: "
+              f"{MAX_INPUT_CHARS} characters"
+          )
+
+          print(
+              f"Maximum output size: "
+              f"{MAX_OUTPUT_TOKENS} tokens"
+          )
+
+          print(
+              f"Generated test cases: "
+              f"{len(specification['tests'])}"
           )
           PY
 
           echo ""
-          echo "Test specification size:"
+          echo "================================"
+          echo "Generated files"
+          echo "================================"
+
+          echo ""
+
+          echo "test-plan.md:"
+          wc -c test-plan.md
+
+          echo ""
+
+          echo "test-spec.json:"
           wc -c test-spec.json
 
           echo ""
+
           echo "Test specification preview:"
           head -80 test-spec.json
-        env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Upload test plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-test-plan
+          path: test-plan.md          
 
       - name: Validate generated test specification
         shell: bash
@@ -1090,7 +1659,7 @@ jobs:
           echo ""
           echo "Final generated file:"
           cat "$TEST_FILE"
-                              
+
       - name: Validate generated Playwright tests
         shell: bash
         run: |
