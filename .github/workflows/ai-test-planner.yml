@@ -100,7 +100,7 @@ jobs:
           name: test-planner-input
           path: test-planner-input.md
 
-        - name: Generate test plan and specification with Mistral
+      - name: Generate test plan and specification with Mistral
         shell: bash
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
