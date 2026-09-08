@@ -117,29 +117,35 @@ jobs:
           import urllib.error
           import urllib.request
 
+          # ============================================================
+          # AZURE AI FOUNDRY / OPENAI-COMPATIBLE CONFIGURATION
+          # ============================================================
+
           API_KEY = os.environ["MISTRAL_API_KEY"]
+
+          AZURE_ENDPOINT = (
+              "https://hcideepseek.services.ai.azure.com/openai/v1/"
+          )
+
+          DEPLOYMENT_NAME = "mistral-small-2503-2"
+
+          API_URL = (
+              AZURE_ENDPOINT.rstrip("/")
+              + "/chat/completions"
+          )
 
           INPUT_FILE = "test-planner-input.md"
           TEST_PLAN_FILE = "test-plan.md"
           TEST_SPEC_FILE = "test-spec.json"
 
-          # ------------------------------------------------------------
+          # ============================================================
           # TOKEN OPTIMIZATION
-          # ------------------------------------------------------------
-          #
-          # The complete project context can be large.
-          #
-          # Limit the input sent to Mistral so one workflow execution
-          # does not consume a large portion of the tokens-per-minute
-          # allowance.
-          #
-          # 16,000 characters is intentionally conservative.
-          #
-          # ------------------------------------------------------------
+          # ============================================================
 
+          # Keep the project context reasonably small.
           MAX_INPUT_CHARS = 16000
 
-          # Limit the model response.
+          # Limit the generated response.
           MAX_OUTPUT_TOKENS = 3000
 
           if not os.path.isfile(INPUT_FILE):
@@ -157,30 +163,21 @@ jobs:
           original_size = len(original_input)
 
           print("")
-          print("Original Mistral input size:")
+          print("Original input size:")
           print(f"{original_size} characters")
 
           if original_size > MAX_INPUT_CHARS:
 
               compact_input = (
                   original_input[:MAX_INPUT_CHARS]
-                  +
-                  "\n\n"
-                  +
-                  "[INPUT TRUNCATED FOR TOKEN OPTIMIZATION]\n"
-                  +
-                  "Focus on the project information and changes "
-                  +
-                  "provided above. Do not assume information that "
-                  +
-                  "is not present."
+                  + "\n\n"
+                  + "[INPUT TRUNCATED FOR TOKEN OPTIMIZATION]\n"
+                  + "Focus only on the project information provided "
+                  + "above. Do not assume information that is not present."
               )
 
               print("")
-              print(
-                  "Input exceeds configured limit."
-              )
-
+              print("Input exceeds configured limit.")
               print(
                   f"Truncating input to "
                   f"{MAX_INPUT_CHARS} characters."
@@ -190,25 +187,23 @@ jobs:
               compact_input = original_input
 
           print("")
-          print("Mistral input size:")
+          print("Final model input size:")
           print(f"{len(compact_input)} characters")
 
           print("")
-          print(
-              "Mistral API calls for this workflow: 1"
-          )
+          print("AI API calls for this workflow: 1")
 
-          # ------------------------------------------------------------
-          # SINGLE MISTRAL REQUEST
-          # ------------------------------------------------------------
-          #
-          # The model directly creates the machine-readable
-          # test specification.
-          #
-          # This removes the previous second Mistral API call that
-          # converted test-plan.md into test-spec.json.
-          #
-          # ------------------------------------------------------------
+          print("")
+          print("Azure endpoint:")
+          print(AZURE_ENDPOINT)
+
+          print("")
+          print("Deployment:")
+          print(DEPLOYMENT_NAME)
+
+          # ============================================================
+          # PROMPT
+          # ============================================================
 
           system_prompt = """
           You are an expert software QA and test automation engineer.
@@ -222,7 +217,7 @@ jobs:
 
           Do not add explanations outside the JSON.
 
-          The JSON must use this structure:
+          The JSON must use exactly this structure:
 
           {
             "project": "project name",
@@ -278,6 +273,8 @@ jobs:
           10. Prefer high-value tests covering changed or affected areas.
 
           11. Return valid JSON only.
+
+          12. Do not wrap the JSON in markdown code fences.
           """
 
           user_prompt = """
@@ -285,8 +282,23 @@ jobs:
 
           """ + compact_input
 
+          # ============================================================
+          # SINGLE API REQUEST
+          # ============================================================
+
+          # IMPORTANT:
+          #
+          # The Azure AI Foundry OpenAI-compatible API expects the
+          # deployment name in the "model" field.
+          #
+          # We intentionally do NOT use response_format here because
+          # model/provider support for JSON response formats can vary.
+          #
+          # The workflow validates the returned JSON itself.
+          #
+
           payload_data = {
-              "model": "mistral-small-latest",
+              "model": DEPLOYMENT_NAME,
               "messages": [
                   {
                       "role": "system",
@@ -297,26 +309,17 @@ jobs:
                       "content": user_prompt
                   }
               ],
-
-              # Deterministic output.
               "temperature": 0,
-
-              # Prevent unnecessarily large responses.
-              "max_tokens": MAX_OUTPUT_TOKENS,
-
-              # Force JSON output.
-              "response_format": {
-                  "type": "json_object"
-              }
+              "max_tokens": MAX_OUTPUT_TOKENS
           }
 
           payload = json.dumps(
               payload_data
           ).encode("utf-8")
 
-          # ------------------------------------------------------------
-          # API REQUEST
-          # ------------------------------------------------------------
+          # ============================================================
+          # API REQUEST WITH RETRY
+          # ============================================================
 
           MAX_ATTEMPTS = 4
 
@@ -329,12 +332,12 @@ jobs:
 
               print("")
               print(
-                  f"Mistral request attempt "
+                  f"AI request attempt "
                   f"{attempt}/{MAX_ATTEMPTS}"
               )
 
               request = urllib.request.Request(
-                  "https://api.mistral.ai/v1/chat/completions",
+                  API_URL,
                   data=payload,
                   headers={
                       "Authorization":
@@ -352,15 +355,19 @@ jobs:
                       timeout=180
                   ) as response:
 
-                      result = json.loads(
+                      response_body = (
                           response.read().decode(
                               "utf-8"
                           )
                       )
 
+                      result = json.loads(
+                          response_body
+                      )
+
                   print("")
                   print(
-                      "Mistral request succeeded."
+                      "AI request succeeded."
                   )
 
                   break
@@ -374,12 +381,16 @@ jobs:
 
                   print("")
                   print(
-                      f"Mistral HTTP error: {e.code}"
+                      f"AI HTTP error: {e.code}"
                   )
 
                   print(
-                      f"Response: {body[:1000]}"
+                      f"Response: {body[:2000]}"
                   )
+
+                  # ----------------------------------------------------
+                  # RATE LIMIT
+                  # ----------------------------------------------------
 
                   if e.code == 429:
 
@@ -387,20 +398,15 @@ jobs:
 
                           print("")
                           print(
-                              "ERROR: Mistral rate limit "
-                              "was exceeded."
+                              "ERROR: API rate limit was exceeded."
                           )
 
                           print(
-                              "The workflow already uses "
-                              "one API call and limits both "
-                              "input and output tokens."
+                              "All retry attempts were exhausted."
                           )
 
                           raise
 
-                      # Use longer delays for a tokens-per-minute
-                      # rate limit.
                       delay = (
                           15 * (2 ** (attempt - 1))
                       ) + random.uniform(0, 3)
@@ -419,6 +425,10 @@ jobs:
 
                       continue
 
+                  # ----------------------------------------------------
+                  # TRANSIENT SERVER ERRORS
+                  # ----------------------------------------------------
+
                   if e.code in (
                       500,
                       502,
@@ -433,8 +443,9 @@ jobs:
                           5 * (2 ** (attempt - 1))
                       ) + random.uniform(0, 2)
 
+                      print("")
                       print(
-                          f"Transient server error."
+                          "Transient server error."
                       )
 
                       print(
@@ -445,6 +456,15 @@ jobs:
                       time.sleep(delay)
 
                       continue
+
+                  # ----------------------------------------------------
+                  # OTHER HTTP ERRORS
+                  # ----------------------------------------------------
+
+                  print("")
+                  print(
+                      "Non-retryable HTTP error encountered."
+                  )
 
                   raise
 
@@ -471,12 +491,12 @@ jobs:
 
           if result is None:
               raise RuntimeError(
-                  "Mistral returned no response."
+                  "AI service returned no response."
               )
 
-          # ------------------------------------------------------------
+          # ============================================================
           # EXTRACT RESPONSE
-          # ------------------------------------------------------------
+          # ============================================================
 
           try:
 
@@ -493,9 +513,10 @@ jobs:
 
               print("")
               print(
-                  "ERROR: Unexpected Mistral response."
+                  "ERROR: Unexpected API response."
               )
 
+              print("")
               print(
                   json.dumps(
                       result,
@@ -504,14 +525,13 @@ jobs:
               )
 
               raise RuntimeError(
-                  "Unable to extract Mistral response."
+                  "Unable to extract model response."
               )
 
           if not isinstance(content, str):
 
               raise RuntimeError(
-                  "Mistral response content "
-                  "is not a string."
+                  "Model response content is not a string."
               )
 
           content = content.strip()
@@ -519,12 +539,33 @@ jobs:
           if not content:
 
               raise RuntimeError(
-                  "Mistral returned empty content."
+                  "Model returned empty content."
               )
 
-          # ------------------------------------------------------------
+          # ============================================================
+          # REMOVE MARKDOWN FENCES IF PRESENT
+          # ============================================================
+
+          if content.startswith("```"):
+
+              lines = content.splitlines()
+
+              if lines and lines[0].startswith("```"):
+                  lines = lines[1:]
+
+              if (
+                  lines
+                  and lines[-1].strip() == "```"
+              ):
+                  lines = lines[:-1]
+
+              content = "\n".join(
+                  lines
+              ).strip()
+
+          # ============================================================
           # VALIDATE JSON
-          # ------------------------------------------------------------
+          # ============================================================
 
           try:
 
@@ -536,7 +577,7 @@ jobs:
 
               print("")
               print(
-                  "ERROR: Mistral returned invalid JSON."
+                  "ERROR: Model returned invalid JSON."
               )
 
               print("")
@@ -584,12 +625,12 @@ jobs:
           if not specification["tests"]:
 
               raise ValueError(
-                  "Mistral generated zero test cases."
+                  "Model generated zero test cases."
               )
 
-          # ------------------------------------------------------------
+          # ============================================================
           # NORMALIZE AND VALIDATE TEST CASES
-          # ------------------------------------------------------------
+          # ============================================================
 
           required_fields = [
               "id",
@@ -717,9 +758,9 @@ jobs:
                       "must be boolean."
                   )
 
-          # ------------------------------------------------------------
+          # ============================================================
           # SAVE test-spec.json
-          # ------------------------------------------------------------
+          # ============================================================
 
           with open(
               TEST_SPEC_FILE,
@@ -743,15 +784,11 @@ jobs:
               f"{len(specification['tests'])}"
           )
 
-          # ------------------------------------------------------------
+          # ============================================================
           # CREATE test-plan.md LOCALLY
-          # ------------------------------------------------------------
-          #
-          # No second Mistral API call.
-          #
-          # The existing workflow still receives test-plan.md.
-          #
-          # ------------------------------------------------------------
+          # ============================================================
+
+          # No second AI API call is made.
 
           lines = []
 
@@ -762,7 +799,7 @@ jobs:
           lines.append("")
 
           lines.append(
-              f"## Project"
+              "## Project"
           )
 
           lines.append("")
@@ -858,7 +895,9 @@ jobs:
 
                   lines.append("")
 
-          test_plan = "\n".join(lines)
+          test_plan = "\n".join(
+              lines
+          )
 
           with open(
               TEST_PLAN_FILE,
@@ -866,7 +905,9 @@ jobs:
               encoding="utf-8"
           ) as f:
 
-              f.write(test_plan)
+              f.write(
+                  test_plan
+              )
 
           print("")
           print(
@@ -880,7 +921,7 @@ jobs:
           )
 
           print(
-              "Mistral processing completed."
+              "AI processing completed."
           )
 
           print(
@@ -927,7 +968,7 @@ jobs:
 
           echo "Test specification preview:"
           head -80 test-spec.json
-
+          
       - name: Upload test plan
         uses: actions/upload-artifact@v4
         with:
