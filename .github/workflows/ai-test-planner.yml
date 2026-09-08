@@ -1090,7 +1090,7 @@ jobs:
           echo ""
           echo "Final generated file:"
           cat "$TEST_FILE"
-                    
+                              
       - name: Validate generated Playwright tests
         shell: bash
         run: |
