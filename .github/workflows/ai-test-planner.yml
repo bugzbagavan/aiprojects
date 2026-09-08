@@ -684,12 +684,11 @@ jobs:
 
           python3 - <<'PY'
           import json
-          import os
 
           AUTOMATED_TESTS = "automated-tests.json"
           OUTPUT_FILE = "tests/generated/extension.spec.js"
 
-          with open(AUTOMATED_TESTS, "r", encoding="utf-8") as f:
+          with open(AUTATED_TESTS := AUTOMATED_TESTS, "r", encoding="utf-8") as f:
               data = json.load(f)
 
           candidates = [
@@ -705,13 +704,14 @@ jobs:
           # ------------------------------------------------------------
           # PROOF OF CONCEPT
           # ------------------------------------------------------------
-          # Only TC-001 is generated for the POC.
-          # TC-001 verifies that the extension built in dist loads
-          # successfully and that the initial BugScribe popup opens.
+          # Generate only TC-001.
           # ------------------------------------------------------------
 
           tc001 = next(
-              (t for t in candidates if t.get("id") == "TC-001"),
+              (
+                  t for t in candidates
+                  if t.get("id") == "TC-001"
+              ),
               None
           )
 
@@ -724,131 +724,272 @@ jobs:
 
           # ------------------------------------------------------------
           # TC-001
-          # ------------------------------------------------------------
           #
-          # IMPORTANT:
+          # This test verifies:
           #
-          # TC-001 is ONLY an extension-load verification.
+          # 1. Extension launches successfully.
+          # 2. Extension service worker is available.
+          # 3. Extension ID can be discovered.
+          # 4. popup.html opens successfully.
+          # 5. BugScribe heading is visible.
+          # 6. Start Recording button is visible.
           #
-          # It must NOT:
-          #   - click Chrome Extensions
-          #   - look for an Enable button
-          #   - navigate to chrome://extensions
-          #   - test the floating widget
-          #   - start recording
-          #   - stop recording
-          #   - test microphone permissions
-          #   - test Save
-          #   - test Azure DevOps
+          # Screenshots:
           #
-          # The service worker proves the extension loaded.
-          # popup.html proves the extension UI can be opened.
-          #
+          # - PASS screenshot attached to Playwright HTML report.
+          # - FAIL screenshot attached to Playwright HTML report.
           # ------------------------------------------------------------
 
-          generated_test = r"""test('TC-001 - Load extension in Chrome', async () => {
-            const context = await launchExtension();
+          generated_test = r"""test(
+            'TC-001 - Load extension in Chrome',
+            async ({}, testInfo) => {
+              let context;
+              let page;
 
-            try {
-              console.log('Checking extension service worker...');
+              try {
+                context = await launchExtension();
 
-              let serviceWorker = context.serviceWorkers()[0];
+                console.log(
+                  'Checking extension service worker...'
+                );
 
-              if (!serviceWorker) {
-                serviceWorker = await context.waitForEvent('serviceworker', {
-                  timeout: 10000
+                let serviceWorker =
+                  context.serviceWorkers()[0];
+
+                if (!serviceWorker) {
+                  serviceWorker =
+                    await context.waitForEvent(
+                      'serviceworker',
+                      {
+                        timeout: 10000
+                      }
+                    );
+                }
+
+                expect(serviceWorker).toBeTruthy();
+
+                const serviceWorkerUrl =
+                  serviceWorker.url();
+
+                console.log(
+                  'Extension service worker:',
+                  serviceWorkerUrl
+                );
+
+                const extensionId =
+                  new URL(serviceWorkerUrl).host;
+
+                expect(extensionId).toBeTruthy();
+
+                console.log(
+                  'Extension ID:',
+                  extensionId
+                );
+
+                page = await context.newPage();
+
+                const popupUrl =
+                  'chrome-extension://' +
+                  extensionId +
+                  '/popup.html';
+
+                console.log(
+                  'Opening BugScribe popup:',
+                  popupUrl
+                );
+
+                await page.goto(popupUrl);
+
+                await expect(page).toHaveTitle(
+                  /BugScribe/i
+                );
+
+                await expect(
+                  page.getByRole('heading', {
+                    name: 'BugScribe'
+                  })
+                ).toBeVisible();
+
+                await expect(
+                  page.getByRole('button', {
+                    name: 'Start Recording'
+                  })
+                ).toBeVisible();
+
+                // ----------------------------------------------------
+                // PASS SCREENSHOT
+                // ----------------------------------------------------
+
+                const passScreenshot =
+                  testInfo.outputPath(
+                    'TC-001-PASS.png'
+                  );
+
+                await page.screenshot({
+                  path: passScreenshot,
+                  fullPage: true
                 });
+
+                await testInfo.attach(
+                  'TC-001 - PASS Screenshot',
+                  {
+                    path: passScreenshot,
+                    contentType: 'image/png'
+                  }
+                );
+
+                console.log(
+                  'PASS screenshot captured:',
+                  passScreenshot
+                );
+
+                console.log(
+                  'BugScribe extension loaded successfully.'
+                );
+
+              } catch (error) {
+
+                // ----------------------------------------------------
+                // FAIL SCREENSHOT
+                // ----------------------------------------------------
+
+                if (
+                  page &&
+                  !page.isClosed()
+                ) {
+                  try {
+                    const failScreenshot =
+                      testInfo.outputPath(
+                        'TC-001-FAIL.png'
+                      );
+
+                    await page.screenshot({
+                      path: failScreenshot,
+                      fullPage: true
+                    });
+
+                    await testInfo.attach(
+                      'TC-001 - FAIL Screenshot',
+                      {
+                        path: failScreenshot,
+                        contentType: 'image/png'
+                      }
+                    );
+
+                    console.log(
+                      'FAIL screenshot captured:',
+                      failScreenshot
+                    );
+
+                  } catch (screenshotError) {
+                    console.log(
+                      'Unable to capture failure screenshot:',
+                      screenshotError.message
+                    );
+                  }
+                }
+
+                throw error;
+
+              } finally {
+
+                // ----------------------------------------------------
+                // CLEANUP
+                // ----------------------------------------------------
+
+                if (context) {
+                  await context.close();
+                }
               }
-
-              expect(serviceWorker).toBeTruthy();
-
-              const serviceWorkerUrl = serviceWorker.url();
-
-              console.log(
-                'Extension service worker:',
-                serviceWorkerUrl
-              );
-
-              const extensionId = new URL(serviceWorkerUrl).host;
-
-              expect(extensionId).toBeTruthy();
-
-              console.log(
-                'Extension ID:',
-                extensionId
-              );
-
-              const page = await context.newPage();
-
-              const popupUrl =
-                'chrome-extension://' +
-                extensionId +
-                '/popup.html';
-
-              console.log(
-                'Opening BugScribe popup:',
-                popupUrl
-              );
-
-              await page.goto(popupUrl);
-
-              await expect(page).toHaveTitle(/BugScribe/i);
-
-              await expect(
-                page.getByRole('heading', {
-                  name: 'BugScribe'
-                })
-              ).toBeVisible();
-
-              await expect(
-                page.getByRole('button', {
-                  name: 'Start Recording'
-                })
-              ).toBeVisible();
-
-              console.log(
-                'BugScribe extension loaded and initial popup UI verified.'
-              );
-
-            } finally {
-              await context.close();
             }
-          });"""
+          );"""
 
           # ------------------------------------------------------------
           # VALIDATE GENERATED TEST
           # ------------------------------------------------------------
 
           required_checks = [
-              ("TC-001", "TC-001"),
-              ("launchExtension()", "launchExtension()"),
-              ("expect(", "expect("),
-              ("popup.html", "popup.html"),
-              ("Start Recording", "Start Recording"),
+              (
+                  "TC-001",
+                  "TC-001"
+              ),
+              (
+                  "launchExtension()",
+                  "launchExtension()"
+              ),
+              (
+                  "expect() assertion",
+                  "expect("
+              ),
+              (
+                  "popup.html",
+                  "popup.html"
+              ),
+              (
+                  "Start Recording",
+                  "Start Recording"
+              ),
+              (
+                  "PASS screenshot",
+                  "TC-001-PASS.png"
+              ),
+              (
+                  "FAIL screenshot",
+                  "TC-001-FAIL.png"
+              ),
+              (
+                  "Playwright attachment",
+                  "testInfo.attach"
+              ),
           ]
 
           for description, value in required_checks:
               if value not in generated_test:
                   raise RuntimeError(
-                      f"Generated TC-001 is missing required content: {description}"
+                      f"Generated TC-001 is missing required content: "
+                      f"{description}"
                   )
 
           forbidden_checks = [
-              ("test.skip(", "test.skip()"),
-              ("test.fixme(", "test.fixme()"),
-              ("chrome://extensions", "chrome://extensions"),
-              ("headless: false", "headless: false"),
-              ("chromium.launch(", "chromium.launch()"),
-              ("chromium.launchPersistentContext(", "chromium.launchPersistentContext()"),
-              ("Enable", "Enable button flow"),
-              ("floating-widget", "floating widget"),
-              ("Create Bug in Azure DevOps", "Azure DevOps flow"),
+              (
+                  "test.skip()",
+                  "test.skip("
+              ),
+              (
+                  "test.fixme()",
+                  "test.fixme("
+              ),
+              (
+                  "chrome://extensions",
+                  "chrome://extensions"
+              ),
+              (
+                  "headless: false",
+                  "headless: false"
+              ),
+              (
+                  "chromium.launch()",
+                  "chromium.launch("
+              ),
+              (
+                  "chromium.launchPersistentContext()",
+                  "chromium.launchPersistentContext("
+              ),
+              (
+                  "floating widget",
+                  "floating-widget"
+              ),
+              (
+                  "Azure DevOps flow",
+                  "Create Bug in Azure DevOps"
+              ),
           ]
 
           for value, description in forbidden_checks:
               if value in generated_test:
                   raise RuntimeError(
-                      f"Generated TC-001 contains forbidden content: {description}"
+                      f"Generated TC-001 contains forbidden content: "
+                      f"{description}"
                   )
 
           # ------------------------------------------------------------
@@ -892,6 +1033,9 @@ jobs:
           print("")
           print("Generated test count: 1")
           print("Generated test ID: TC-001")
+          print("Screenshot support:")
+          print("  PASS screenshot: ENABLED")
+          print("  FAIL screenshot: ENABLED")
           print(f"Output: {OUTPUT_FILE}")
 
           print("")
@@ -936,6 +1080,24 @@ jobs:
             exit 1
           fi
 
+          echo ""
+          echo "Checking screenshot support..."
+
+          if ! grep -q "TC-001-PASS.png" "$TEST_FILE"; then
+            echo "ERROR: PASS screenshot is not configured."
+            exit 1
+          fi
+
+          if ! grep -q "TC-001-FAIL.png" "$TEST_FILE"; then
+            echo "ERROR: FAIL screenshot is not configured."
+            exit 1
+          fi
+
+          if ! grep -q "testInfo.attach" "$TEST_FILE"; then
+            echo "ERROR: Screenshot attachment is not configured."
+            exit 1
+          fi
+
           if grep -q "test.skip(" "$TEST_FILE"; then
             echo "ERROR: test.skip() found."
             exit 1
@@ -972,8 +1134,11 @@ jobs:
           echo "================================"
 
           echo ""
+          echo "Screenshot reporting: ENABLED"
+
+          echo ""
           echo "Final generated file:"
-          cat "$TEST_FILE"                
+          cat "$TEST_FILE"   
           
       - name: Validate generated Playwright tests
         shell: bash
