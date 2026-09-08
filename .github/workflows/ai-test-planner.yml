@@ -744,76 +744,165 @@ jobs:
           # The service worker proves the extension loaded.
           # popup.html proves the extension UI can be opened.
           #
+          # Screenshots:
+          #   - PASS screenshot after successful verification
+          #   - FAIL screenshot when a test action/assertion fails
+          #
           # ------------------------------------------------------------
 
-          generated_test = r"""test('TC-001 - Load extension in Chrome', async () => {
-            const context = await launchExtension();
+          generated_test = r"""test(
+            'TC-001 - Load extension in Chrome',
+            async ({}, testInfo) => {
+              let context;
+              let page;
 
-            try {
-              console.log('Checking extension service worker...');
+              try {
+                context = await launchExtension();
 
-              let serviceWorker = context.serviceWorkers()[0];
+                console.log('Checking extension service worker...');
 
-              if (!serviceWorker) {
-                serviceWorker = await context.waitForEvent('serviceworker', {
-                  timeout: 10000
+                let serviceWorker = context.serviceWorkers()[0];
+
+                if (!serviceWorker) {
+                  serviceWorker = await context.waitForEvent(
+                    'serviceworker',
+                    {
+                      timeout: 10000
+                    }
+                  );
+                }
+
+                expect(serviceWorker).toBeTruthy();
+
+                const serviceWorkerUrl = serviceWorker.url();
+
+                console.log(
+                  'Extension service worker:',
+                  serviceWorkerUrl
+                );
+
+                const extensionId = new URL(
+                  serviceWorkerUrl
+                ).host;
+
+                expect(extensionId).toBeTruthy();
+
+                console.log(
+                  'Extension ID:',
+                  extensionId
+                );
+
+                page = await context.newPage();
+
+                const popupUrl =
+                  'chrome-extension://' +
+                  extensionId +
+                  '/popup.html';
+
+                console.log(
+                  'Opening BugScribe popup:',
+                  popupUrl
+                );
+
+                await page.goto(popupUrl);
+
+                await expect(page).toHaveTitle(/BugScribe/i);
+
+                await expect(
+                  page.getByRole('heading', {
+                    name: 'BugScribe'
+                  })
+                ).toBeVisible();
+
+                await expect(
+                  page.getByRole('button', {
+                    name: 'Start Recording'
+                  })
+                ).toBeVisible();
+
+                console.log(
+                  'BugScribe extension loaded and initial popup UI verified.'
+                );
+
+                # ----------------------------------------------------
+                # PASS SCREENSHOT
+                # ----------------------------------------------------
+
+                const passScreenshot =
+                  testInfo.outputPath(
+                    'TC-001-PASS.png'
+                  );
+
+                await page.screenshot({
+                  path: passScreenshot,
+                  fullPage: true
                 });
+
+                await testInfo.attach(
+                  'TC-001 - PASS Screenshot',
+                  {
+                    path: passScreenshot,
+                    contentType: 'image/png'
+                  }
+                );
+
+                console.log(
+                  'PASS screenshot captured:',
+                  passScreenshot
+                );
+
+              } catch (error) {
+
+                // ----------------------------------------------------
+                // FAIL SCREENSHOT
+                // ----------------------------------------------------
+
+                if (
+                  page &&
+                  !page.isClosed()
+                ) {
+                  try {
+                    const failScreenshot =
+                      testInfo.outputPath(
+                        'TC-001-FAIL.png'
+                      );
+
+                    await page.screenshot({
+                      path: failScreenshot,
+                      fullPage: true
+                    });
+
+                    await testInfo.attach(
+                      'TC-001 - FAIL Screenshot',
+                      {
+                        path: failScreenshot,
+                        contentType: 'image/png'
+                      }
+                    );
+
+                    console.log(
+                      'FAIL screenshot captured:',
+                      failScreenshot
+                    );
+
+                  } catch (screenshotError) {
+                    console.log(
+                      'Unable to capture failure screenshot:',
+                      screenshotError.message
+                    );
+                  }
+                }
+
+                throw error;
+
+              } finally {
+
+                if (context) {
+                  await context.close();
+                }
               }
-
-              expect(serviceWorker).toBeTruthy();
-
-              const serviceWorkerUrl = serviceWorker.url();
-
-              console.log(
-                'Extension service worker:',
-                serviceWorkerUrl
-              );
-
-              const extensionId = new URL(serviceWorkerUrl).host;
-
-              expect(extensionId).toBeTruthy();
-
-              console.log(
-                'Extension ID:',
-                extensionId
-              );
-
-              const page = await context.newPage();
-
-              const popupUrl =
-                'chrome-extension://' +
-                extensionId +
-                '/popup.html';
-
-              console.log(
-                'Opening BugScribe popup:',
-                popupUrl
-              );
-
-              await page.goto(popupUrl);
-
-              await expect(page).toHaveTitle(/BugScribe/i);
-
-              await expect(
-                page.getByRole('heading', {
-                  name: 'BugScribe'
-                })
-              ).toBeVisible();
-
-              await expect(
-                page.getByRole('button', {
-                  name: 'Start Recording'
-                })
-              ).toBeVisible();
-
-              console.log(
-                'BugScribe extension loaded and initial popup UI verified.'
-              );
-
-            } finally {
-              await context.close();
             }
-          });"""
+          );"""
 
           # ------------------------------------------------------------
           # VALIDATE GENERATED TEST
@@ -825,6 +914,9 @@ jobs:
               ("expect(", "expect("),
               ("popup.html", "popup.html"),
               ("Start Recording", "Start Recording"),
+              ("PASS screenshot", "TC-001-PASS.png"),
+              ("FAIL screenshot", "TC-001-FAIL.png"),
+              ("test attachment", "testInfo.attach"),
           ]
 
           for description, value in required_checks:
@@ -892,6 +984,9 @@ jobs:
           print("")
           print("Generated test count: 1")
           print("Generated test ID: TC-001")
+          print("Screenshot support:")
+          print("  PASS screenshot: ENABLED")
+          print("  FAIL screenshot: ENABLED")
           print(f"Output: {OUTPUT_FILE}")
 
           print("")
@@ -936,6 +1031,24 @@ jobs:
             exit 1
           fi
 
+          echo ""
+          echo "Checking screenshot support..."
+
+          if ! grep -q "TC-001-PASS.png" "$TEST_FILE"; then
+            echo "ERROR: PASS screenshot is not configured."
+            exit 1
+          fi
+
+          if ! grep -q "TC-001-FAIL.png" "$TEST_FILE"; then
+            echo "ERROR: FAIL screenshot is not configured."
+            exit 1
+          fi
+
+          if ! grep -q "testInfo.attach" "$TEST_FILE"; then
+            echo "ERROR: Playwright screenshot attachment is not configured."
+            exit 1
+          fi
+
           if grep -q "test.skip(" "$TEST_FILE"; then
             echo "ERROR: test.skip() found."
             exit 1
@@ -972,9 +1085,12 @@ jobs:
           echo "================================"
 
           echo ""
+          echo "Screenshot reporting: ENABLED"
+
+          echo ""
           echo "Final generated file:"
-          cat "$TEST_FILE"                
-          
+          cat "$TEST_FILE"
+                    
       - name: Validate generated Playwright tests
         shell: bash
         run: |
