@@ -499,69 +499,30 @@ jobs:
           # ============================================================
 
           try:
-
-              content = (
-                  result["choices"][0]
-                  ["message"]["content"]
-              )
-
-          except (
-              KeyError,
-              IndexError,
-              TypeError
-          ):
-
+              content = result["choices"][0]["message"]["content"].strip()
+          except (KeyError, IndexError, TypeError) as e:
               print("")
-              print(
-                  "ERROR: Unexpected API response."
-              )
+              print("ERROR: Unexpected AI response structure.")
+              print(json.dumps(result, indent=2)[:5000])
+              raise RuntimeError("Unable to extract model response content.") from e
 
-              print("")
-              print(
-                  json.dumps(
-                      result,
-                      indent=2
-                  )[:5000]
-              )
+          print("")
+          print("AI response received.")
 
-              raise RuntimeError(
-                  "Unable to extract model response."
-              )
-
-          if not isinstance(content, str):
-
-              raise RuntimeError(
-                  "Model response content is not a string."
-              )
-
-          content = content.strip()
-
-          if not content:
-
-              raise RuntimeError(
-                  "Model returned empty content."
-              )
-
-          # ============================================================
-          # REMOVE MARKDOWN FENCES IF PRESENT
-          # ============================================================
-
+          # Remove a Markdown code fence if the model returned one.
           if content.startswith("```"):
-
               lines = content.splitlines()
 
-              if lines and lines[0].startswith("```"):
+              if lines and lines[0].strip().startswith("```"):
                   lines = lines[1:]
 
-              if (
-                  lines
-                  and lines[-1].strip() == "```"
-              ):
+              if lines and lines[-1].strip() == "```":
                   lines = lines[:-1]
 
-              content = "\n".join(
-                  lines
-              ).strip()
+              content = "\n".join(lines).strip()
+
+          if not content:
+              raise RuntimeError("AI service returned empty content.")
 
           # ============================================================
           # VALIDATE JSON
@@ -1434,9 +1395,9 @@ jobs:
                   'BugScribe extension loaded and initial popup UI verified.'
                 );
 
-                # ----------------------------------------------------
-                # PASS SCREENSHOT
-                # ----------------------------------------------------
+                // ----------------------------------------------------
+                // PASS SCREENSHOT
+                // ----------------------------------------------------
 
                 const passScreenshot =
                   testInfo.outputPath(
