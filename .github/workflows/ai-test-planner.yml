@@ -1324,14 +1324,16 @@ jobs:
           generated_test = r"""test(
             'TC-001 - Load extension in Chrome',
             async ({}, testInfo) => {
-              const context = await launchExtension();
+              let context;
               let page;
-          
+
               try {
+                context = await launchExtension();
+
                 console.log('Checking extension service worker...');
-          
+
                 let serviceWorker = context.serviceWorkers()[0];
-          
+
                 if (!serviceWorker) {
                   serviceWorker = await context.waitForEvent(
                     'serviceworker',
@@ -1340,107 +1342,120 @@ jobs:
                     }
                   );
                 }
-          
+
                 expect(serviceWorker).toBeTruthy();
-          
+
                 const serviceWorkerUrl = serviceWorker.url();
-          
+
                 console.log(
                   'Extension service worker:',
                   serviceWorkerUrl
                 );
-          
-                const extensionId =
-                  new URL(serviceWorkerUrl).host;
-          
+
+                const extensionId = new URL(
+                  serviceWorkerUrl
+                ).host;
+
                 expect(extensionId).toBeTruthy();
-          
+
                 console.log(
                   'Extension ID:',
                   extensionId
                 );
-          
+
                 page = await context.newPage();
-          
+
                 const popupUrl =
                   'chrome-extension://' +
                   extensionId +
                   '/popup.html';
-          
+
                 console.log(
                   'Opening BugScribe popup:',
                   popupUrl
                 );
-          
+
                 await page.goto(popupUrl);
-          
-                await expect(page).toHaveTitle(
-                  /BugScribe/i
-                );
-          
+
+                await expect(page).toHaveTitle(/BugScribe/i);
+
                 await expect(
                   page.getByRole('heading', {
                     name: 'BugScribe'
                   })
                 ).toBeVisible();
-          
+
                 await expect(
                   page.getByRole('button', {
                     name: 'Start Recording'
                   })
                 ).toBeVisible();
-          
-                // Capture the actual PNG image as a Buffer.
-                const passScreenshot =
-                  await page.screenshot({
-                    fullPage: true
-                  });
-          
-                // Attach the PNG binary directly to the
-                // Playwright test result.
-                await testInfo.attach(
-                  'TC-001 - PASS Screenshot',
-                  {
-                    body: passScreenshot,
-                    contentType: 'image/png'
-                  }
-                );
-          
-                console.log(
-                  'PASS screenshot attached successfully.'
-                );
-          
+
                 console.log(
                   'BugScribe extension loaded and initial popup UI verified.'
                 );
-          
-              } catch (error) {
-          
-                console.log(
-                  'TC-001 failed. Capturing failure screenshot...'
+
+                // ----------------------------------------------------
+                // PASS SCREENSHOT
+                // ----------------------------------------------------
+
+                const passScreenshot =
+                  testInfo.outputPath(
+                    'TC-001-PASS.png'
+                  );
+
+                await page.screenshot({
+                  path: passScreenshot,
+                  fullPage: true
+                });
+
+                await testInfo.attach(
+                  'TC-001 - PASS Screenshot',
+                  {
+                    path: passScreenshot,
+                    contentType: 'image/png'
+                  }
                 );
-          
-                // Capture a screenshot only if a page was created.
-                if (page) {
+
+                console.log(
+                  'PASS screenshot captured:',
+                  passScreenshot
+                );
+
+              } catch (error) {
+
+                // ----------------------------------------------------
+                // FAIL SCREENSHOT
+                // ----------------------------------------------------
+
+                if (
+                  page &&
+                  !page.isClosed()
+                ) {
                   try {
                     const failScreenshot =
-                      await page.screenshot({
-                        fullPage: true
-                      });
-          
-                    // Attach the actual PNG binary directly.
+                      testInfo.outputPath(
+                        'TC-001-FAIL.png'
+                      );
+
+                    await page.screenshot({
+                      path: failScreenshot,
+                      fullPage: true
+                    });
+
                     await testInfo.attach(
                       'TC-001 - FAIL Screenshot',
                       {
-                        body: failScreenshot,
+                        path: failScreenshot,
                         contentType: 'image/png'
                       }
                     );
-          
+
                     console.log(
-                      'FAIL screenshot attached successfully.'
+                      'FAIL screenshot captured:',
+                      failScreenshot
                     );
-          
+
                   } catch (screenshotError) {
                     console.log(
                       'Unable to capture failure screenshot:',
@@ -1448,18 +1463,18 @@ jobs:
                     );
                   }
                 }
-          
-                // Re-throw the original test error so the
-                // Playwright test is correctly marked as failed.
+
                 throw error;
-          
+
               } finally {
-          
-                await context.close();
-          
+
+                if (context) {
+                  await context.close();
+                }
               }
             }
           );"""
+
           # ------------------------------------------------------------
           # VALIDATE GENERATED TEST
           # ------------------------------------------------------------
